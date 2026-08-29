@@ -46,13 +46,13 @@ export default function TabLayout() {
       <Tabs.Screen
         name="detect"
         options={{
-          title: 'Detect AI',
+          title: 'Meal Scan',
           tabBarIcon: ({ color }) => (
             <View className="bg-emerald-600 w-14 h-14 rounded-full items-center justify-center -mt-6 border-4 border-white shadow-sm">
               <ScanLine color="#FFFFFF" size={24} />
             </View>
           ),
-          tabBarLabel: 'Detect AI',
+          tabBarLabel: 'Meal Scan',
         }}
       />
       <Tabs.Screen
