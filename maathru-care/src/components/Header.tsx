@@ -13,8 +13,8 @@ export default function Header() {
         </View>
       </View>
       <View className="w-12 h-12 rounded-full border-[1.5px] border-emerald-100 overflow-hidden shadow-sm bg-slate-50 items-center justify-center">
-        <Image 
-          source={{ uri: 'https://i.pravatar.cc/150?img=5' }} 
+        <Image
+          source={{ uri: 'https://i.pravatar.cc/150?img=5' }}
           className="w-full h-full"
           resizeMode="cover"
         />
