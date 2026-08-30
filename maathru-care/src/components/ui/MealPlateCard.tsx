@@ -9,11 +9,14 @@ import {
 import { UtensilsCrossed, X, Sparkles, Camera } from 'lucide-react-native';
 import { MealItem } from '@/types/meal';
 import { NutritionMiniBar } from './NutritionMiniBar';
+import { QuantityEditModal } from './QuantityEditModal';
+import { useState } from 'react';
 
 interface MealPlateCardProps {
   items: MealItem[];
   mealType: string;
   onRemoveItem: (id: string) => void;
+  onUpdateQuantity: (id: string, qty: number) => void;
 }
 
 /** Returns computed nutrition totals across all items */
@@ -35,10 +38,12 @@ function computeTotals(items: MealItem[]) {
 function MealItemChip({
   item,
   onRemove,
+  onPressQuantity,
   animDelay,
 }: {
   item: MealItem;
   onRemove: () => void;
+  onPressQuantity: () => void;
   animDelay: number;
 }) {
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -124,6 +129,23 @@ function MealItemChip({
       >
         {formattedName}
       </Text>
+
+      {/* Quantity Badge */}
+      <TouchableOpacity
+        onPress={onPressQuantity}
+        activeOpacity={0.7}
+        style={{
+          marginLeft: 4,
+          paddingHorizontal: 6,
+          paddingVertical: 2,
+          backgroundColor: '#D1FAE5',
+          borderRadius: 10,
+        }}
+      >
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#059669' }}>
+          x{item.servingMultiplier}
+        </Text>
+      </TouchableOpacity>
 
       <TouchableOpacity
         onPress={onRemove}
@@ -215,7 +237,8 @@ function ImageFan({ items }: { items: MealItem[] }) {
   );
 }
 
-export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardProps) {
+export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity }: MealPlateCardProps) {
+  const [editingItem, setEditingItem] = useState<MealItem | null>(null);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   // Pulse the card when an item is added
@@ -348,6 +371,7 @@ export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardPr
                 key={item.id}
                 item={item}
                 onRemove={() => onRemoveItem(item.id)}
+                onPressQuantity={() => setEditingItem(item)}
                 animDelay={0}
               />
             ))}
@@ -371,6 +395,20 @@ export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardPr
         >
           <NutritionMiniBar totals={totals} />
         </View>
+      )}
+
+      {/* Edit Quantity Modal */}
+      {editingItem && (
+        <QuantityEditModal
+          visible={!!editingItem}
+          foodName={editingItem.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+          initialQuantity={editingItem.servingMultiplier}
+          onSave={(newQty) => {
+            onUpdateQuantity(editingItem.id, newQty);
+            setEditingItem(null);
+          }}
+          onCancel={() => setEditingItem(null)}
+        />
       )}
     </Animated.View>
   );

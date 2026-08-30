@@ -182,48 +182,84 @@ export default function DetectScreen() {
     );
   };
 
+  const handleUpdateQuantity = (id: string, newQuantity: number) => {
+    setMealItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, servingMultiplier: newQuantity } : item))
+    );
+  };
+
   const handleAddSelectedToMeal = async () => {
     if (selectedDetectionIds.length === 0) return;
 
     setIsLookingUp(true);
-    const newMealItems: MealItem[] = [];
-
+    
+    // Group selected detections by food_id to count them
+    const quantityMap: Record<string, { count: number; confidence: number }> = {};
+    
     for (const id of selectedDetectionIds) {
       const index = parseInt(id.split('-').pop() || '0', 10);
       const detection = currentDetections[index];
-
       if (detection) {
-        const nutritionData = await mealService.getNutritionForFood(detection.food_id);
-
-        if (nutritionData) {
-          newMealItems.push({
-            id: Math.random().toString(36).substring(7),
-            foodId: nutritionData.food_id,
-            name: nutritionData.display_name,
-            confidence: detection.confidence,
-            imageUri: imageUri || undefined,
-            servingMultiplier: 1.0,
-            carbsG: nutritionData.carbs_g || 0,
-            sugarG: nutritionData.sugar_g || 0,
-            fiberG: nutritionData.fiber_g || 0,
-            fatG: nutritionData.fat_g || 0,
-            ironMg: nutritionData.iron_mg || 0,
-            calciumMg: nutritionData.calcium_mg || 0,
-            timestamp: Date.now(),
-          });
-        } else {
-          Alert.alert(
-            'Missing Nutrition Info',
-            `Nutrition data for "${detection.food_id}" is not in our database yet.`
-          );
+        if (!quantityMap[detection.food_id]) {
+          quantityMap[detection.food_id] = { count: 0, confidence: detection.confidence };
         }
+        quantityMap[detection.food_id].count += 1;
+        quantityMap[detection.food_id].confidence = Math.max(
+          quantityMap[detection.food_id].confidence,
+          detection.confidence
+        );
+      }
+    }
+
+    const fetchedItems: MealItem[] = [];
+
+    for (const [foodId, data] of Object.entries(quantityMap)) {
+      const nutritionData = await mealService.getNutritionForFood(foodId);
+
+      if (nutritionData) {
+        fetchedItems.push({
+          id: Math.random().toString(36).substring(7),
+          foodId: nutritionData.food_id,
+          name: nutritionData.display_name,
+          confidence: data.confidence,
+          imageUri: imageUri || undefined,
+          servingMultiplier: data.count,
+          carbsG: nutritionData.carbs_g || 0,
+          sugarG: nutritionData.sugar_g || 0,
+          fiberG: nutritionData.fiber_g || 0,
+          fatG: nutritionData.fat_g || 0,
+          ironMg: nutritionData.iron_mg || 0,
+          calciumMg: nutritionData.calcium_mg || 0,
+          timestamp: Date.now(),
+        });
+      } else {
+        Alert.alert(
+          'Missing Nutrition Info',
+          `Nutrition data for "${foodId}" is not in our database yet.`
+        );
       }
     }
 
     setIsLookingUp(false);
 
-    if (newMealItems.length > 0) {
-      setMealItems((prev) => [...prev, ...newMealItems]);
+    if (fetchedItems.length > 0) {
+      setMealItems((prev) => {
+        const nextItems = [...prev];
+        for (const fetched of fetchedItems) {
+          const existingIndex = nextItems.findIndex((i) => i.foodId === fetched.foodId);
+          if (existingIndex >= 0) {
+            // merge
+            nextItems[existingIndex] = {
+              ...nextItems[existingIndex],
+              servingMultiplier: nextItems[existingIndex].servingMultiplier + fetched.servingMultiplier,
+            };
+          } else {
+            // add
+            nextItems.push(fetched);
+          }
+        }
+        return nextItems;
+      });
       resetScanWorkspace();
     }
   };
@@ -594,6 +630,7 @@ export default function DetectScreen() {
           items={mealItems}
           mealType={mealType}
           onRemoveItem={handleRemoveMealItem}
+          onUpdateQuantity={handleUpdateQuantity}
         />
 
         {/* ── Divider before scan ───────────────────────── */}
