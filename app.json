@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "CTG Monitor",
+    "slug": "ctg-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "ctgmobile",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow access to select CTG images."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow camera access to capture CTG images."
+        }
+      ],
+      "expo-asset",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
