@@ -22,6 +22,7 @@ import { MealTypePicker, getSmartMealDefault } from '@/components/ui/MealTypePic
 import { ScanActionButtons } from '@/components/ui/ScanActionButtons';
 import { DetectionResultCard } from '@/components/ui/DetectionResultCard';
 import { MealImagePreview } from '@/components/ui/MealImagePreview';
+import { MealSaveSuccessModal } from '@/components/ui/MealSaveSuccessModal';
 
 // API & Services
 import { analyzeMealImage, Detection } from '@/services/api/foodDetector';
@@ -47,9 +48,25 @@ export default function DetectScreen() {
   // ── Loading states ──────────────────────────────────────────
   const [isSaving, setIsSaving] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // ── Save button animation ───────────────────────────────────
   const saveBtnScale = useRef(new Animated.Value(1)).current;
+  const saveBtnPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (mealItems.length > 0 && scanState === 'idle') {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(saveBtnPulse, { toValue: 1.025, duration: 1200, useNativeDriver: true }),
+          Animated.timing(saveBtnPulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      saveBtnPulse.setValue(1);
+      saveBtnPulse.stopAnimation();
+    }
+  }, [mealItems.length, scanState]);
 
   useEffect(() => {
     (async () => {
@@ -228,28 +245,10 @@ export default function DetectScreen() {
     setIsSaving(true);
     try {
       await mealService.saveMealSession(ACTIVE_USER_ID, mealType, selectedDate, mealItems);
+      
+      // Show custom elegant modal instead of generic OS alert
+      setShowSuccessModal(true);
 
-      Alert.alert(
-        '🎉 Meal Saved!',
-        `Your ${mealType.toLowerCase()} has been saved successfully. Check Wellness to see your nutrition totals.`,
-        [
-          {
-            text: 'View Wellness',
-            onPress: () => {
-              setMealItems([]);
-              resetScanWorkspace();
-              router.push('/wellness');
-            },
-          },
-          {
-            text: 'Scan More',
-            onPress: () => {
-              setMealItems([]);
-              resetScanWorkspace();
-            },
-          },
-        ]
-      );
     } catch (error: any) {
       Alert.alert('Error Saving Meal', error.message || 'Please try again.');
     } finally {
@@ -633,7 +632,7 @@ export default function DetectScreen() {
             elevation: 10,
           }}
         >
-          <Animated.View style={{ transform: [{ scale: saveBtnScale }] }}>
+          <Animated.View style={{ transform: [{ scale: saveBtnScale }, { scale: saveBtnPulse }] }}>
             <TouchableOpacity
               onPress={handleFinishAndSave}
               disabled={isSaving}
@@ -682,6 +681,23 @@ export default function DetectScreen() {
           </Animated.View>
         </View>
       )}
+
+      {/* ── Success Modal ──────────────────────────────────────── */}
+      <MealSaveSuccessModal
+        visible={showSuccessModal}
+        mealType={mealType}
+        onViewWellness={() => {
+          setShowSuccessModal(false);
+          setMealItems([]);
+          resetScanWorkspace();
+          router.push('/wellness');
+        }}
+        onScanMore={() => {
+          setShowSuccessModal(false);
+          setMealItems([]);
+          resetScanWorkspace();
+        }}
+      />
     </View>
   );
 }
