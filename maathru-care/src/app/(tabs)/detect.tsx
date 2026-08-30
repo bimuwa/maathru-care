@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, Image as ImageIcon, Mic, Type, AlertCircle, CheckCircle2, ChevronRight, UtensilsCrossed } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,39 +13,36 @@ import { MealImagePreview } from '@/components/ui/MealImagePreview';
 import { DetectionResultCard } from '@/components/ui/DetectionResultCard';
 import { MealPlateItem } from '@/components/ui/MealPlateItem';
 
-// API
+// API & Services
 import { analyzeMealImage, Detection } from '@/services/api/foodDetector';
-
-type ScanState = 'idle' | 'compressing' | 'analyzing' | 'review' | 'error' | 'no_detection';
-
-interface MealItem {
-  id: string;
-  name: string;
-  confidence: number;
-  timestamp: number;
-}
+import { mealService } from '@/services/mealService';
+import { ScanState, MealItem } from '@/types/meal';
+import { ACTIVE_USER_ID } from '@/constants/userConfig';
 
 export default function DetectScreen() {
   const router = useRouter();
   
-  // State
-  const [scanState, setScanState] = useState<ScanState>('idle');
+  // Overall Meal Session State
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
+  const [mealType, setMealType] = useState<string>('Lunch'); // Example default
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  
+  // Active Scan State
+  const [scanState, setScanState] = useState<ScanState>('idle');
   const [currentDetections, setCurrentDetections] = useState<Detection[]>([]);
   const [selectedDetectionIds, setSelectedDetectionIds] = useState<string[]>([]);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Saving State
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLookingUp, setIsLookingUp] = useState(false);
   
-  // Request permissions on mount
   useEffect(() => {
     (async () => {
       if (Platform.OS !== 'web') {
         const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
         const { status: galleryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        
-        if (cameraStatus !== 'granted') {
-          // Handled gracefully via system alerts if needed
-        }
       }
     })();
   }, []);
@@ -83,24 +80,21 @@ export default function DetectScreen() {
     setErrorMsg(null);
 
     try {
-      // Compress and resize image
       const manipulatedImage = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: 640 } }], // Resize to 640px width
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG } // 70% quality JPEG
+        [{ resize: { width: 640 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
       );
 
       setImageUri(manipulatedImage.uri);
       setScanState('analyzing');
 
-      // Send to API
-      // Note: The ideal implementation would use AbortController here for the 45s timeout.
-      // Assuming analyzeMealImage handles this internally or we can wrap it if needed.
       const result = await analyzeMealImage(manipulatedImage.uri);
 
       if (result.success && result.count > 0 && result.detections.length > 0) {
         setCurrentDetections(result.detections);
-        // Default: select all detections with reasonable confidence (e.g., > 0.5)
+        
+        // Select only the highest confidence one by default, or all > 0.5
         const defaultSelected = result.detections
           .filter(d => d.confidence > 0.5)
           .map((d, i) => `${d.food_id}-${i}`);
@@ -150,29 +144,55 @@ export default function DetectScreen() {
     }
   };
 
-  const handlePlaceholder = (feature: string) => {
-    Alert.alert('Coming Soon', `${feature} is coming soon.`);
-  };
-
   const toggleDetection = (id: string) => {
     setSelectedDetectionIds(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
   };
 
-  const handleAddSelectedToMeal = () => {
-    const newItems: MealItem[] = currentDetections
-      .map((d, i) => ({ detection: d, id: `${d.food_id}-${i}` }))
-      .filter(item => selectedDetectionIds.includes(item.id))
-      .map(item => ({
-        id: Math.random().toString(36).substring(7), // Unique ID for plate
-        name: item.detection.food_id,
-        confidence: item.detection.confidence,
-        timestamp: Date.now()
-      }));
-
-    if (newItems.length > 0) {
-      setMealItems(prev => [...prev, ...newItems]);
+  const handleAddSelectedToMeal = async () => {
+    if (selectedDetectionIds.length === 0) return;
+    
+    setIsLookingUp(true);
+    const newMealItems: MealItem[] = [];
+    
+    for (const id of selectedDetectionIds) {
+      const index = parseInt(id.split('-').pop() || '0', 10);
+      const detection = currentDetections[index];
+      
+      if (detection) {
+        // Query Supabase for nutrition info
+        const nutritionData = await mealService.getNutritionForFood(detection.food_id);
+        
+        if (nutritionData) {
+          newMealItems.push({
+            id: Math.random().toString(36).substring(7),
+            foodId: nutritionData.food_id,
+            name: nutritionData.display_name,
+            confidence: detection.confidence,
+            imageUri: imageUri || undefined,
+            servingMultiplier: 1.0,
+            carbsG: nutritionData.carbs_g || 0,
+            sugarG: nutritionData.sugar_g || 0,
+            fiberG: nutritionData.fiber_g || 0,
+            fatG: nutritionData.fat_g || 0,
+            ironMg: nutritionData.iron_mg || 0,
+            calciumMg: nutritionData.calcium_mg || 0,
+            timestamp: Date.now(),
+          });
+        } else {
+          Alert.alert(
+            'Missing Nutrition Info',
+            `Nutrition data for ${detection.food_id} is unavailable.`
+          );
+        }
+      }
+    }
+    
+    setIsLookingUp(false);
+    
+    if (newMealItems.length > 0) {
+      setMealItems(prev => [...prev, ...newMealItems]);
       resetScanWorkspace();
     }
   };
@@ -181,16 +201,35 @@ export default function DetectScreen() {
     setMealItems(prev => prev.filter(item => item.id !== idToRemove));
   };
 
-  const handleFinishAndSave = () => {
+  const handleFinishAndSave = async () => {
     if (mealItems.length === 0) return;
+    if (isSaving) return;
     
-    // In a real implementation, we'd pass the mealItems to a state manager or via router params
-    // to the actual nutrition logging screen. For now, navigate back/home.
-    Alert.alert(
-      'Meal Ready to Log',
-      'Your confirmed foods are ready for nutritional analysis.',
-      [{ text: 'OK', onPress: () => router.push('/') }]
-    );
+    setIsSaving(true);
+    try {
+      await mealService.saveMealSession(
+        ACTIVE_USER_ID,
+        mealType,
+        selectedDate,
+        mealItems
+      );
+      
+      Alert.alert('Meal Saved', 'Your meal has been successfully logged.', [
+        {
+          text: 'View Dashboard',
+          onPress: () => {
+             // Reset state
+             setMealItems([]);
+             resetScanWorkspace();
+             router.push('/wellness');
+          }
+        }
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error Saving Meal', error.message || 'Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // --- Rendering Sections ---
@@ -215,9 +254,22 @@ export default function DetectScreen() {
     return (
       <View className="px-4 mt-6 mb-2">
         <View className="flex-row justify-between items-end mb-3">
-          <Text className="text-lg font-bold text-slate-900">Today's Meal Plate</Text>
+          <Text className="text-lg font-bold text-slate-900">{mealType} Tray</Text>
           <Text className="text-emerald-700 font-medium text-sm">{mealItems.length} {mealItems.length === 1 ? 'item' : 'items'}</Text>
         </View>
+        
+        {/* Simple Meal Type Selector for demo (expand later) */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+           {['Breakfast', 'Lunch', 'Evening Snack', 'Dinner'].map((type) => (
+             <TouchableOpacity 
+                key={type} 
+                onPress={() => setMealType(type)}
+                className={`mr-2 px-4 py-2 rounded-full border ${mealType === type ? 'bg-emerald-100 border-emerald-300' : 'bg-white border-slate-200'}`}
+             >
+                <Text className={`${mealType === type ? 'text-emerald-800 font-bold' : 'text-slate-600'}`}>{type}</Text>
+             </TouchableOpacity>
+           ))}
+        </ScrollView>
         
         {mealItems.map(item => (
           <MealPlateItem 
@@ -233,12 +285,16 @@ export default function DetectScreen() {
           <View className="mt-4">
             <TouchableOpacity 
               onPress={handleFinishAndSave}
-              className="bg-emerald-600 w-full py-4 rounded-xl items-center shadow-sm flex-row justify-center active:bg-emerald-700"
+              disabled={isSaving}
+              className={`w-full py-4 rounded-xl items-center shadow-sm flex-row justify-center ${isSaving ? 'bg-emerald-400' : 'bg-emerald-600 active:bg-emerald-700'}`}
             >
+              {isSaving ? (
+                <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
+              ) : null}
               <Text className="text-white font-semibold text-[16px] mr-2">
-                Finish & Save Meal
+                {isSaving ? 'Saving your meal...' : 'Finish & Save Meal Plate'}
               </Text>
-              <ChevronRight size={20} color="#FFFFFF" />
+              {!isSaving && <ChevronRight size={20} color="#FFFFFF" />}
             </TouchableOpacity>
           </View>
         )}
@@ -278,7 +334,7 @@ export default function DetectScreen() {
             subtitle="Describe your meal by voice"
             icon={Mic}
             badge="Coming Soon"
-            onPress={() => handlePlaceholder('Voice meal logging')}
+            onPress={() => Alert.alert('Coming Soon', 'Voice logging is coming soon.')}
             disabled={true}
           />
           
@@ -287,7 +343,7 @@ export default function DetectScreen() {
             subtitle="Describe what you ate"
             icon={Type}
             badge="Coming Soon"
-            onPress={() => handlePlaceholder('Text meal logging')}
+            onPress={() => Alert.alert('Coming Soon', 'Text logging is coming soon.')}
             disabled={true}
           />
         </View>
@@ -336,11 +392,14 @@ export default function DetectScreen() {
             <View className="mt-6 mb-4">
               <TouchableOpacity 
                 onPress={handleAddSelectedToMeal}
-                disabled={selectedDetectionIds.length === 0}
-                className={`w-full py-4 rounded-xl items-center shadow-sm mb-3 ${selectedDetectionIds.length > 0 ? 'bg-emerald-600 active:bg-emerald-700' : 'bg-slate-200'}`}
+                disabled={selectedDetectionIds.length === 0 || isLookingUp}
+                className={`w-full py-4 rounded-xl items-center flex-row justify-center shadow-sm mb-3 ${selectedDetectionIds.length > 0 ? 'bg-emerald-600 active:bg-emerald-700' : 'bg-slate-200'}`}
               >
+                {isLookingUp ? (
+                  <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
+                ) : null}
                 <Text className={`font-semibold text-[16px] ${selectedDetectionIds.length > 0 ? 'text-white' : 'text-slate-400'}`}>
-                  + Add Selected to Meal Plate
+                  {isLookingUp ? 'Fetching Nutrition...' : '+ Add Selected to Meal Plate'}
                 </Text>
               </TouchableOpacity>
 
@@ -349,7 +408,7 @@ export default function DetectScreen() {
                 className="bg-white border border-slate-200 w-full py-4 rounded-xl items-center active:bg-slate-50"
               >
                 <Text className="text-slate-700 font-semibold text-[16px]">
-                  Retake Photo
+                  Discard & Retake
                 </Text>
               </TouchableOpacity>
             </View>
@@ -435,11 +494,10 @@ export default function DetectScreen() {
 
   return (
     <View className="flex-1 bg-[#F8FAFC]">
-      <MealScanHeader onBack={handleBack} sessionName="Lunch" />
+      <MealScanHeader onBack={handleBack} sessionName={mealType} />
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         {renderMealPlate()}
         
-        {/* Visual divider if we have items in plate and are not actively scanning */}
         {mealItems.length > 0 && scanState === 'idle' && (
           <View className="h-px bg-slate-200 mx-4 mt-6 mb-2" />
         )}
