@@ -1,15 +1,20 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Sparkles, Clock } from 'lucide-react-native';
+import { ChevronLeft, Sparkles } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 interface MealScanHeaderProps {
   onBack?: () => void;
   sessionName?: string;
+  itemCount?: number;
 }
 
-export function MealScanHeader({ onBack, sessionName = "Lunch Session" }: MealScanHeaderProps) {
+export function MealScanHeader({
+  onBack,
+  sessionName = 'Lunch',
+  itemCount = 0,
+}: MealScanHeaderProps) {
   const router = useRouter();
 
   const handleBack = () => {
@@ -21,35 +26,86 @@ export function MealScanHeader({ onBack, sessionName = "Lunch Session" }: MealSc
   };
 
   return (
-    <SafeAreaView className="bg-white">
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-slate-100" style={{ marginTop: Platform.OS === 'android' ? 30 : 0 }}>
+    <SafeAreaView style={{ backgroundColor: '#FFFFFF' }} edges={['top']}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: '#F0FDF4',
+          marginTop: Platform.OS === 'android' ? 8 : 0,
+        }}
+      >
         {/* Back Button */}
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={handleBack}
-          className="w-10 h-10 items-center justify-center -ml-2 rounded-full active:bg-slate-50"
+          style={{
+            width: 40,
+            height: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 20,
+            backgroundColor: '#F8FAFC',
+            borderWidth: 1,
+            borderColor: '#E2E8F0',
+          }}
+          activeOpacity={0.7}
           accessibilityLabel="Go back"
         >
-          <ChevronLeft size={24} color="#0F172A" />
+          <ChevronLeft size={22} color="#334155" strokeWidth={2} />
         </TouchableOpacity>
 
-        {/* Title & Session */}
-        <View className="flex-1 items-center mr-2">
-          <Text className="text-lg font-bold text-slate-900">
-            Maternal Meal Scanner
+        {/* Title */}
+        <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
+          <Text
+            style={{
+              fontSize: 17,
+              fontWeight: '700',
+              color: '#0F172A',
+              letterSpacing: -0.2,
+            }}
+          >
+            Meal Scanner
           </Text>
-          <View className="flex-row items-center mt-0.5">
-            <Clock size={10} color="#64748B" className="mr-1" />
-            <Text className="text-slate-500 text-xs font-medium">
-              {sessionName}
+          {itemCount > 0 ? (
+            <Text style={{ fontSize: 12, color: '#059669', fontWeight: '600', marginTop: 1 }}>
+              {sessionName} · {itemCount} {itemCount === 1 ? 'item' : 'items'} on plate
             </Text>
-          </View>
+          ) : (
+            <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 1 }}>
+              {sessionName} session
+            </Text>
+          )}
         </View>
 
         {/* AI Badge */}
-        <View className="flex-row items-center bg-teal-50 px-2 py-1.5 rounded-full border border-teal-100">
-          <Sparkles size={12} color="#0D9488" className="mr-1" />
-          <Text className="text-teal-700 text-[10px] font-semibold uppercase tracking-wider">
-            AI Powered
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#F0FDF4',
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: '#BBF7D0',
+          }}
+        >
+          <Sparkles size={12} color="#059669" />
+          <Text
+            style={{
+              fontSize: 10,
+              fontWeight: '700',
+              color: '#047857',
+              marginLeft: 4,
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+            }}
+          >
+            AI
           </Text>
         </View>
       </View>

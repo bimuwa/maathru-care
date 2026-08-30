@@ -1,17 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, Image as ImageIcon, Mic, Type, AlertCircle, CheckCircle2, ChevronRight, UtensilsCrossed } from 'lucide-react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Platform,
+  ActivityIndicator,
+  Animated,
+} from 'react-native';
+import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useRouter } from 'expo-router';
 
 // UI Components
 import { MealScanHeader } from '@/components/ui/MealScanHeader';
-import { MealInputCard } from '@/components/ui/MealInputCard';
-import { MealImagePreview } from '@/components/ui/MealImagePreview';
+import { MealPlateCard } from '@/components/ui/MealPlateCard';
+import { DateStrip } from '@/components/ui/DateStrip';
+import { MealTypePicker, getSmartMealDefault } from '@/components/ui/MealTypePicker';
+import { ScanActionButtons } from '@/components/ui/ScanActionButtons';
 import { DetectionResultCard } from '@/components/ui/DetectionResultCard';
-import { MealPlateItem } from '@/components/ui/MealPlateItem';
+import { MealImagePreview } from '@/components/ui/MealImagePreview';
 
 // API & Services
 import { analyzeMealImage, Detection } from '@/services/api/foodDetector';
@@ -21,28 +31,31 @@ import { ACTIVE_USER_ID } from '@/constants/userConfig';
 
 export default function DetectScreen() {
   const router = useRouter();
-  
-  // Overall Meal Session State
+
+  // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
-  const [mealType, setMealType] = useState<string>('Lunch'); // Example default
+  const [mealType, setMealType] = useState<string>(getSmartMealDefault());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  
-  // Active Scan State
+
+  // ── Active scan state ───────────────────────────────────────
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [currentDetections, setCurrentDetections] = useState<Detection[]>([]);
   const [selectedDetectionIds, setSelectedDetectionIds] = useState<string[]>([]);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Saving State
+  // ── Loading states ──────────────────────────────────────────
   const [isSaving, setIsSaving] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
-  
+
+  // ── Save button animation ───────────────────────────────────
+  const saveBtnScale = useRef(new Animated.Value(1)).current;
+
   useEffect(() => {
     (async () => {
       if (Platform.OS !== 'web') {
-        const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-        const { status: galleryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        await ImagePicker.requestCameraPermissionsAsync();
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       }
     })();
   }, []);
@@ -62,11 +75,11 @@ export default function DetectScreen() {
         "Your scanned foods haven't been saved yet.",
         [
           { text: 'Keep Editing', style: 'cancel' },
-          { 
-            text: 'Leave', 
+          {
+            text: 'Leave',
             style: 'destructive',
-            onPress: () => router.back()
-          }
+            onPress: () => router.back(),
+          },
         ]
       );
     } else {
@@ -93,13 +106,17 @@ export default function DetectScreen() {
 
       if (result.success && result.count > 0 && result.detections.length > 0) {
         setCurrentDetections(result.detections);
-        
-        // Select only the highest confidence one by default, or all > 0.5
+
+        // Auto-select detections above 50% confidence
         const defaultSelected = result.detections
-          .filter(d => d.confidence > 0.5)
+          .filter((d) => d.confidence > 0.5)
           .map((d, i) => `${d.food_id}-${i}`);
-        
-        setSelectedDetectionIds(defaultSelected.length > 0 ? defaultSelected : [result.detections[0].food_id + '-0']);
+
+        setSelectedDetectionIds(
+          defaultSelected.length > 0
+            ? defaultSelected
+            : [`${result.detections[0].food_id}-0`]
+        );
         setScanState('review');
       } else if (result.success && result.count === 0) {
         setScanState('no_detection');
@@ -117,13 +134,12 @@ export default function DetectScreen() {
     try {
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
-        quality: 1, 
+        quality: 1,
       });
-
       if (!result.canceled && result.assets[0]) {
         processImage(result.assets[0].uri);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Camera Error', 'Could not open the camera.');
     }
   };
@@ -135,35 +151,33 @@ export default function DetectScreen() {
         allowsEditing: false,
         quality: 1,
       });
-
       if (!result.canceled && result.assets[0]) {
         processImage(result.assets[0].uri);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Gallery Error', 'Could not open the photo gallery.');
     }
   };
 
   const toggleDetection = (id: string) => {
-    setSelectedDetectionIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    setSelectedDetectionIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
   const handleAddSelectedToMeal = async () => {
     if (selectedDetectionIds.length === 0) return;
-    
+
     setIsLookingUp(true);
     const newMealItems: MealItem[] = [];
-    
+
     for (const id of selectedDetectionIds) {
       const index = parseInt(id.split('-').pop() || '0', 10);
       const detection = currentDetections[index];
-      
+
       if (detection) {
-        // Query Supabase for nutrition info
         const nutritionData = await mealService.getNutritionForFood(detection.food_id);
-        
+
         if (nutritionData) {
           newMealItems.push({
             id: Math.random().toString(36).substring(7),
@@ -183,48 +197,59 @@ export default function DetectScreen() {
         } else {
           Alert.alert(
             'Missing Nutrition Info',
-            `Nutrition data for ${detection.food_id} is unavailable.`
+            `Nutrition data for "${detection.food_id}" is not in our database yet.`
           );
         }
       }
     }
-    
+
     setIsLookingUp(false);
-    
+
     if (newMealItems.length > 0) {
-      setMealItems(prev => [...prev, ...newMealItems]);
+      setMealItems((prev) => [...prev, ...newMealItems]);
       resetScanWorkspace();
     }
   };
 
   const handleRemoveMealItem = (idToRemove: string) => {
-    setMealItems(prev => prev.filter(item => item.id !== idToRemove));
+    setMealItems((prev) => prev.filter((item) => item.id !== idToRemove));
   };
 
   const handleFinishAndSave = async () => {
     if (mealItems.length === 0) return;
     if (isSaving) return;
-    
+
+    // Button press animation
+    Animated.sequence([
+      Animated.timing(saveBtnScale, { toValue: 0.96, duration: 100, useNativeDriver: true }),
+      Animated.timing(saveBtnScale, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+
     setIsSaving(true);
     try {
-      await mealService.saveMealSession(
-        ACTIVE_USER_ID,
-        mealType,
-        selectedDate,
-        mealItems
+      await mealService.saveMealSession(ACTIVE_USER_ID, mealType, selectedDate, mealItems);
+
+      Alert.alert(
+        '🎉 Meal Saved!',
+        `Your ${mealType.toLowerCase()} has been saved successfully. Check Wellness to see your nutrition totals.`,
+        [
+          {
+            text: 'View Wellness',
+            onPress: () => {
+              setMealItems([]);
+              resetScanWorkspace();
+              router.push('/wellness');
+            },
+          },
+          {
+            text: 'Scan More',
+            onPress: () => {
+              setMealItems([]);
+              resetScanWorkspace();
+            },
+          },
+        ]
       );
-      
-      Alert.alert('Meal Saved', 'Your meal has been successfully logged.', [
-        {
-          text: 'View Dashboard',
-          onPress: () => {
-             // Reset state
-             setMealItems([]);
-             resetScanWorkspace();
-             router.push('/wellness');
-          }
-        }
-      ]);
     } catch (error: any) {
       Alert.alert('Error Saving Meal', error.message || 'Please try again.');
     } finally {
@@ -232,259 +257,265 @@ export default function DetectScreen() {
     }
   };
 
-  // --- Rendering Sections ---
-
-  const renderMealPlate = () => {
-    if (mealItems.length === 0) {
-      return (
-        <View className="bg-white mx-4 mt-4 p-6 rounded-2xl border border-slate-100 shadow-sm items-center">
-          <View className="w-16 h-16 bg-slate-50 rounded-full items-center justify-center mb-3">
-            <UtensilsCrossed size={32} color="#94A3B8" />
-          </View>
-          <Text className="text-lg font-bold text-slate-800 mb-1">
-            Your plate is empty
-          </Text>
-          <Text className="text-slate-500 text-center text-sm">
-            Scan a food item to start building your meal.
-          </Text>
-        </View>
-      );
-    }
-
-    return (
-      <View className="px-4 mt-6 mb-2">
-        <View className="flex-row justify-between items-end mb-3">
-          <Text className="text-lg font-bold text-slate-900">{mealType} Tray</Text>
-          <Text className="text-emerald-700 font-medium text-sm">{mealItems.length} {mealItems.length === 1 ? 'item' : 'items'}</Text>
-        </View>
-        
-        {/* Simple Meal Type Selector for demo (expand later) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-           {['Breakfast', 'Lunch', 'Evening Snack', 'Dinner'].map((type) => (
-             <TouchableOpacity 
-                key={type} 
-                onPress={() => setMealType(type)}
-                className={`mr-2 px-4 py-2 rounded-full border ${mealType === type ? 'bg-emerald-100 border-emerald-300' : 'bg-white border-slate-200'}`}
-             >
-                <Text className={`${mealType === type ? 'text-emerald-800 font-bold' : 'text-slate-600'}`}>{type}</Text>
-             </TouchableOpacity>
-           ))}
-        </ScrollView>
-        
-        {mealItems.map(item => (
-          <MealPlateItem 
-            key={item.id}
-            name={item.name}
-            confidence={item.confidence}
-            onRemove={() => handleRemoveMealItem(item.id)}
-          />
-        ))}
-        
-        {/* Footer actions when there are items */}
-        {scanState === 'idle' && (
-          <View className="mt-4">
-            <TouchableOpacity 
-              onPress={handleFinishAndSave}
-              disabled={isSaving}
-              className={`w-full py-4 rounded-xl items-center shadow-sm flex-row justify-center ${isSaving ? 'bg-emerald-400' : 'bg-emerald-600 active:bg-emerald-700'}`}
-            >
-              {isSaving ? (
-                <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
-              ) : null}
-              <Text className="text-white font-semibold text-[16px] mr-2">
-                {isSaving ? 'Saving your meal...' : 'Finish & Save Meal Plate'}
-              </Text>
-              {!isSaving && <ChevronRight size={20} color="#FFFFFF" />}
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    );
-  };
+  // ── Render: Scan workspace ──────────────────────────────────
 
   const renderScanWorkspace = () => {
     if (scanState === 'idle') {
       return (
-        <View className="px-4 pt-8 pb-10">
-          <Text className="text-xl font-bold text-slate-900 mb-2">
-            {mealItems.length === 0 ? "Add food to your meal" : "Scan another food"}
-          </Text>
-          <Text className="text-[15px] text-slate-500 mb-6">
-            Take a photo or choose a meal image and let AI identify the food items.
-          </Text>
-
-          <MealInputCard
-            title="Scan with Camera"
-            subtitle="Take a photo of your meal"
-            icon={Camera}
-            badge="Recommended"
-            isPrimary={true}
-            onPress={handleCamera}
-          />
-          
-          <MealInputCard
-            title="Pick from Gallery"
-            subtitle="Choose an existing meal photo"
-            icon={ImageIcon}
-            onPress={handleGallery}
-          />
-          
-          <MealInputCard
-            title="Voice Log"
-            subtitle="Describe your meal by voice"
-            icon={Mic}
-            badge="Coming Soon"
-            onPress={() => Alert.alert('Coming Soon', 'Voice logging is coming soon.')}
-            disabled={true}
-          />
-          
-          <MealInputCard
-            title="Text Description"
-            subtitle="Describe what you ate"
-            icon={Type}
-            badge="Coming Soon"
-            onPress={() => Alert.alert('Coming Soon', 'Text logging is coming soon.')}
-            disabled={true}
+        <View style={{ paddingBottom: 120, paddingTop: 8 }}>
+          <ScanActionButtons
+            onCamera={handleCamera}
+            onGallery={handleGallery}
+            hasItems={mealItems.length > 0}
           />
         </View>
       );
     }
 
     return (
-      <View className="px-4 pt-6 pb-20">
-        <Text className="text-xl font-bold text-slate-900 mb-4">
-          Scan Workspace
-        </Text>
-        
-        <MealImagePreview 
-          imageUri={imageUri!} 
-          isAnalyzing={scanState === 'analyzing'} 
+      <View style={{ paddingHorizontal: 16, paddingBottom: 120 }}>
+        {/* Image preview */}
+        <MealImagePreview
+          imageUri={imageUri!}
+          isAnalyzing={scanState === 'analyzing'}
           isCompressing={scanState === 'compressing'}
         />
 
+        {/* Review state */}
         {scanState === 'review' && (
-          <View className="mt-6">
-            <View className="flex-row items-center mb-2">
-              <CheckCircle2 size={20} color="#0D9488" className="mr-2" />
-              <Text className="text-lg font-bold text-slate-900">
-                AI Suggested Matches
+          <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <CheckCircle2 size={20} color="#059669" />
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginLeft: 8 }}>
+                AI Detected
               </Text>
             </View>
-            <Text className="text-[15px] text-slate-600 mb-5">
-              Please check that these foods are correct before adding them to your meal.
+            <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 16, lineHeight: 20 }}>
+              Tap to select which foods to add to your plate. You can pick multiple.
             </Text>
 
             {currentDetections.map((detection, index) => {
               const uniqueId = `${detection.food_id}-${index}`;
               const isSelected = selectedDetectionIds.includes(uniqueId);
-              
+
               return (
-                <DetectionResultCard 
+                <DetectionResultCard
                   key={uniqueId}
                   foodName={detection.food_id}
                   confidence={detection.confidence}
                   isSelected={isSelected}
                   onToggle={() => toggleDetection(uniqueId)}
+                  imageUri={imageUri}
                 />
               );
             })}
 
-            <View className="mt-6 mb-4">
-              <TouchableOpacity 
+            {/* Action buttons */}
+            <View style={{ marginTop: 8 }}>
+              <TouchableOpacity
                 onPress={handleAddSelectedToMeal}
                 disabled={selectedDetectionIds.length === 0 || isLookingUp}
-                className={`w-full py-4 rounded-xl items-center flex-row justify-center shadow-sm mb-3 ${selectedDetectionIds.length > 0 ? 'bg-emerald-600 active:bg-emerald-700' : 'bg-slate-200'}`}
+                activeOpacity={0.85}
+                style={{
+                  borderRadius: 16,
+                  paddingVertical: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  marginBottom: 10,
+                  backgroundColor:
+                    selectedDetectionIds.length > 0 && !isLookingUp ? '#059669' : '#E2E8F0',
+                  shadowColor: '#059669',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: selectedDetectionIds.length > 0 ? 0.3 : 0,
+                  shadowRadius: 10,
+                  elevation: selectedDetectionIds.length > 0 ? 5 : 0,
+                }}
               >
                 {isLookingUp ? (
                   <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
                 ) : null}
-                <Text className={`font-semibold text-[16px] ${selectedDetectionIds.length > 0 ? 'text-white' : 'text-slate-400'}`}>
-                  {isLookingUp ? 'Fetching Nutrition...' : '+ Add Selected to Meal Plate'}
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: '700',
+                    color:
+                      selectedDetectionIds.length > 0 && !isLookingUp ? '#FFFFFF' : '#94A3B8',
+                  }}
+                >
+                  {isLookingUp ? 'Fetching nutrition data...' : '🍽️  Add to Plate'}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={resetScanWorkspace}
-                className="bg-white border border-slate-200 w-full py-4 rounded-xl items-center active:bg-slate-50"
+                activeOpacity={0.7}
+                style={{
+                  borderRadius: 16,
+                  paddingVertical: 14,
+                  alignItems: 'center',
+                  borderWidth: 1.5,
+                  borderColor: '#E2E8F0',
+                  backgroundColor: '#FFFFFF',
+                }}
               >
-                <Text className="text-slate-700 font-semibold text-[16px]">
-                  Discard & Retake
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#64748B' }}>
+                  Retake / Discard
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
+        {/* No detection state */}
         {scanState === 'no_detection' && (
-          <View className="items-center mt-6 p-6 bg-white rounded-2xl border border-slate-100">
-            <View className="w-16 h-16 bg-slate-50 rounded-full items-center justify-center mb-4">
-              <AlertCircle size={32} color="#94A3B8" />
-            </View>
-            <Text className="text-lg font-bold text-slate-900 mb-2 text-center">
+          <View
+            style={{
+              alignItems: 'center',
+              padding: 28,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: '#F1F5F9',
+            }}
+          >
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>🤔</Text>
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: '#0F172A',
+                marginBottom: 8,
+                textAlign: 'center',
+              }}
+            >
               No food detected
             </Text>
-            <Text className="text-[15px] text-slate-500 mb-6 text-center">
-              We couldn't clearly identify any food in this image. Try taking another photo with better lighting.
+            <Text
+              style={{
+                fontSize: 14,
+                color: '#64748B',
+                textAlign: 'center',
+                marginBottom: 20,
+                lineHeight: 20,
+              }}
+            >
+              We couldn't find any food in that photo. Try taking another photo in brighter
+              lighting, with the food filling the frame.
             </Text>
-            
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={resetScanWorkspace}
-              className="bg-emerald-600 w-full py-3.5 rounded-xl items-center shadow-sm active:bg-emerald-700"
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: '#059669',
+                paddingHorizontal: 28,
+                paddingVertical: 13,
+                borderRadius: 14,
+              }}
             >
-              <Text className="text-white font-semibold text-[16px]">
-                Retake Photo
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {scanState === 'error' && (
-          <View className="items-center mt-6 p-6 bg-white rounded-2xl border border-red-100">
-            <View className="w-16 h-16 bg-red-50 rounded-full items-center justify-center mb-4">
-              <AlertCircle size={32} color="#EF4444" />
-            </View>
-            <Text className="text-lg font-bold text-slate-900 mb-2 text-center">
-              Analysis Failed
-            </Text>
-            <Text className="text-[15px] text-slate-500 mb-6 text-center">
-              {errorMsg || "We couldn't analyze this meal right now."}
-            </Text>
-            
-            <TouchableOpacity 
-              onPress={() => processImage(imageUri!)}
-              className="bg-emerald-600 w-full py-3.5 rounded-xl items-center shadow-sm active:bg-emerald-700 mb-3"
-            >
-              <Text className="text-white font-semibold text-[16px]">
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
                 Try Again
               </Text>
             </TouchableOpacity>
+          </View>
+        )}
 
-            <TouchableOpacity 
-              onPress={resetScanWorkspace}
-              className="bg-white border border-slate-200 w-full py-3.5 rounded-xl items-center active:bg-slate-50"
+        {/* Error state */}
+        {scanState === 'error' && (
+          <View
+            style={{
+              alignItems: 'center',
+              padding: 28,
+              backgroundColor: '#FFF5F5',
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: '#FED7D7',
+            }}
+          >
+            <AlertCircle size={44} color="#EF4444" style={{ marginBottom: 12 }} />
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: '#1A202C',
+                marginBottom: 8,
+                textAlign: 'center',
+              }}
             >
-              <Text className="text-slate-700 font-semibold text-[16px]">
+              Analysis Failed
+            </Text>
+            <Text
+              style={{
+                fontSize: 14,
+                color: '#718096',
+                textAlign: 'center',
+                marginBottom: 20,
+                lineHeight: 20,
+              }}
+            >
+              {errorMsg || "We couldn't analyze your meal right now. Please try again."}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => processImage(imageUri!)}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: '#059669',
+                paddingHorizontal: 28,
+                paddingVertical: 13,
+                borderRadius: 14,
+                marginBottom: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <RefreshCcw size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>Try Again</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={resetScanWorkspace}
+              activeOpacity={0.7}
+              style={{
+                paddingHorizontal: 28,
+                paddingVertical: 12,
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: '#E2E8F0',
+                backgroundColor: '#FFFFFF',
+              }}
+            >
+              <Text style={{ color: '#64748B', fontWeight: '600', fontSize: 15 }}>
                 Retake Photo
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
+        {/* Loading / analyzing state */}
         {(scanState === 'compressing' || scanState === 'analyzing') && (
-          <View className="items-center mt-8">
-            <Text className="text-lg font-bold text-slate-800 mb-1">
-              Analyzing your meal...
+          <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A', marginBottom: 6 }}>
+              {scanState === 'compressing' ? 'Preparing your photo...' : '🔍 Identifying food...'}
             </Text>
-            <Text className="text-slate-500 text-center mb-6">
-              Identifying food items and preparing your nutrition insights.
-            </Text>
-             <TouchableOpacity 
-              onPress={resetScanWorkspace}
-              className="bg-white border border-slate-200 px-8 py-3 rounded-xl items-center active:bg-slate-50"
+            <Text
+              style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}
             >
-              <Text className="text-slate-700 font-medium text-[15px]">
-                Cancel & Retake
-              </Text>
+              Our AI is looking up nutritional information for your meal.
+            </Text>
+            <TouchableOpacity
+              onPress={resetScanWorkspace}
+              activeOpacity={0.7}
+              style={{
+                paddingHorizontal: 24,
+                paddingVertical: 11,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor: '#E2E8F0',
+                backgroundColor: '#FFFFFF',
+              }}
+            >
+              <Text style={{ color: '#64748B', fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -492,18 +523,154 @@ export default function DetectScreen() {
     );
   };
 
+  // ── Main render ─────────────────────────────────────────────
+
   return (
-    <View className="flex-1 bg-[#F8FAFC]">
-      <MealScanHeader onBack={handleBack} sessionName={mealType} />
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {renderMealPlate()}
-        
-        {mealItems.length > 0 && scanState === 'idle' && (
-          <View className="h-px bg-slate-200 mx-4 mt-6 mb-2" />
-        )}
-        
+    <View style={{ flex: 1, backgroundColor: '#F0FDF4' }}>
+      {/* Header */}
+      <MealScanHeader
+        onBack={handleBack}
+        sessionName={mealType}
+        itemCount={mealItems.length}
+      />
+
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 20 }}
+      >
+        {/* ── Step 1: Date Strip ──────────────────────────── */}
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            paddingTop: 16,
+            paddingBottom: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: '#F0FDF4',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: '600',
+              color: '#94A3B8',
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              paddingHorizontal: 16,
+              marginBottom: 10,
+            }}
+          >
+            Step 1 — Select Date
+          </Text>
+          <DateStrip selectedDate={selectedDate} onDateChange={setSelectedDate} />
+        </View>
+
+        {/* ── Step 2: Meal Type ────────────────────────────── */}
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            paddingTop: 14,
+            paddingBottom: 16,
+            borderBottomWidth: 1,
+            borderBottomColor: '#F0FDF4',
+            marginBottom: 8,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: '600',
+              color: '#94A3B8',
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              paddingHorizontal: 16,
+              marginBottom: 10,
+            }}
+          >
+            Step 2 — What meal is this?
+          </Text>
+          <MealTypePicker selected={mealType} onSelect={setMealType} />
+        </View>
+
+        {/* ── Plate Card ───────────────────────────────────── */}
+        <MealPlateCard
+          items={mealItems}
+          mealType={mealType}
+          onRemoveItem={handleRemoveMealItem}
+        />
+
+        {/* ── Divider before scan ───────────────────────── */}
+        <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0' }} />
+            <Text style={{ fontSize: 12, color: '#94A3B8', marginHorizontal: 12, fontWeight: '600' }}>
+              SCAN FOOD
+            </Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0' }} />
+          </View>
+        </View>
+
+        {/* ── Step 3: Scan Workspace ─────────────────────── */}
         {renderScanWorkspace()}
       </ScrollView>
+
+      {/* ── Sticky Save Button (only when items exist & idle) ── */}
+      {mealItems.length > 0 && scanState === 'idle' && (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+            backgroundColor: '#FFFFFF',
+            borderTopWidth: 1,
+            borderTopColor: '#F0FDF4',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -4 },
+            shadowOpacity: 0.06,
+            shadowRadius: 12,
+            elevation: 10,
+          }}
+        >
+          <Animated.View style={{ transform: [{ scale: saveBtnScale }] }}>
+            <TouchableOpacity
+              onPress={handleFinishAndSave}
+              disabled={isSaving}
+              activeOpacity={0.88}
+              style={{
+                borderRadius: 18,
+                paddingVertical: 17,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                backgroundColor: isSaving ? '#A7F3D0' : '#059669',
+                shadowColor: '#059669',
+                shadowOffset: { width: 0, height: 5 },
+                shadowOpacity: 0.4,
+                shadowRadius: 14,
+                elevation: 8,
+              }}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
+              ) : (
+                <Text style={{ fontSize: 18, marginRight: 10 }}>✅</Text>
+              )}
+              <Text style={{ fontSize: 17, fontWeight: '700', color: '#FFFFFF' }}>
+                {isSaving
+                  ? 'Saving your meal...'
+                  : `Confirm & Save ${mealType}`}
+              </Text>
+              {!isSaving && (
+                <ChevronRight size={20} color="rgba(255,255,255,0.7)" style={{ marginLeft: 6 }} />
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
