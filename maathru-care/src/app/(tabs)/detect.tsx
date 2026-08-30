@@ -13,7 +13,7 @@ import {
 import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // UI Components
@@ -56,10 +56,20 @@ export default function DetectScreen() {
     }, [])
   );
 
+  const { date } = useLocalSearchParams<{ date?: string }>();
+
   // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
   const [mealType, setMealType] = useState<string>(getSmartMealDefault());
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  
+  const initialDate = React.useMemo(() => {
+    if (!date) return new Date();
+    const [y, m, d] = date.split('-');
+    if (y && m && d) return new Date(Number(y), Number(m)-1, Number(d));
+    return new Date();
+  }, [date]);
+  
+  const [selectedDate, setSelectedDate] = useState<Date>(initialDate);
 
   // ── Active scan state ───────────────────────────────────────
   const [scanState, setScanState] = useState<ScanState>('idle');

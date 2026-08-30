@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Dimensions, LayoutAnimation, Platform, UIManager
+  StyleSheet, Dimensions, LayoutAnimation, Platform, UIManager,
+  FlatList, ViewToken
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   HeartPulse, Calendar, AlertCircle, CheckCircle2,
   ShieldAlert, RefreshCw, Zap, Activity, Info, Check, TrendingUp,
-  Camera
+  Camera, ChevronLeft, ChevronRight, CalendarX
 } from 'lucide-react-native';
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
@@ -50,7 +51,19 @@ const COLORS = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!iso) return '';
+  const d = new Date(iso);
+  // Re-adjust if it's parsed as UTC to local date if necessary, but assuming YYYY-MM-DD input, this might be off by timezone.
+  // Better approach for YYYY-MM-DD string:
+  const [y, m, day] = iso.split('-');
+  if (!y || !m || !day) return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const localDate = new Date(Number(y), Number(m)-1, Number(day));
+  return localDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function getLocalDateString(d: Date) {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 const formatLocalTime = (isoString: string) => {
@@ -219,7 +232,6 @@ export default function WellnessScreen() {
   const { tab } = useLocalSearchParams<{ tab?: string }>();
 
   const [activeTab, setActiveTab] = useState<Tab>('daily');
-  const [selectedDate] = useState<Date>(new Date());
   const [maternalProfile, setMaternalProfile] = useState<any>(null);
 
   // Deep link handling
@@ -236,9 +248,38 @@ export default function WellnessScreen() {
     loadProfile();
   }, []);
 
-  // Daily
-  const [isLoadingDaily, setIsLoadingDaily] = useState(false);
-  const [dailyData, setDailyData] = useState<any[]>([]);
+  // Daily Data & Caching
+  const [dateRange, setDateRange] = useState<string[]>([]);
+  const [selectedDateIso, setSelectedDateIso] = useState<string>(getLocalDateString(new Date()));
+  const [dailyDataMap, setDailyDataMap] = useState<Record<string, any[]>>({});
+  const [isLoadingDailyMap, setIsLoadingDailyMap] = useState<Record<string, boolean>>({});
+  const flatListRef = React.useRef<FlatList>(null);
+  
+  useEffect(() => {
+    if (maternalProfile) {
+      const start = maternalProfile.created_at ? new Date(maternalProfile.created_at) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const end = new Date();
+      
+      const dates: string[] = [];
+      let curr = new Date(start);
+      curr.setHours(0,0,0,0);
+      end.setHours(0,0,0,0);
+      
+      while (curr <= end) {
+        dates.push(getLocalDateString(curr));
+        curr.setDate(curr.getDate() + 1);
+      }
+      if (dates.length === 0) dates.push(getLocalDateString(end));
+      setDateRange(dates);
+      
+      // Auto-scroll to end on first load
+      setTimeout(() => {
+        if (flatListRef.current && dates.length > 0) {
+          flatListRef.current.scrollToIndex({ index: dates.length - 1, animated: false });
+        }
+      }, 100);
+    }
+  }, [maternalProfile]);
 
   // Weekly
   const [isLoadingWeekly, setIsLoadingWeekly] = useState(false);
@@ -252,18 +293,20 @@ export default function WellnessScreen() {
   const [gdmError, setGdmError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (activeTab === 'daily') loadDaily();
+    if (activeTab === 'daily' && selectedDateIso) loadDailyForDate(selectedDateIso);
     else if (activeTab === 'weekly') loadWeekly();
     else if (activeTab === 'gdm') loadGdmCache();
-  }, [activeTab]);
+  }, [activeTab, selectedDateIso]);
 
-  const loadDaily = async () => {
-    setIsLoadingDaily(true);
+  const loadDailyForDate = async (dateIso: string) => {
+    if (dailyDataMap[dateIso]) return; // Already cached
+    
+    setIsLoadingDailyMap(prev => ({ ...prev, [dateIso]: true }));
     try {
-      const data = await mealService.getDailyNutrition(ACTIVE_USER_ID, selectedDate);
-      setDailyData(data);
+      const data = await mealService.getDailyNutrition(ACTIVE_USER_ID, new Date(dateIso));
+      setDailyDataMap(prev => ({ ...prev, [dateIso]: data }));
     } catch { }
-    setIsLoadingDaily(false);
+    setIsLoadingDailyMap(prev => ({ ...prev, [dateIso]: false }));
   };
 
   const loadWeekly = async () => {
@@ -306,8 +349,79 @@ export default function WellnessScreen() {
     }
   };
 
-  const t = useMemo(() => {
-    return dailyData.reduce(
+
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  DAILY TAB
+  // ═══════════════════════════════════════════════════════════════════
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if (viewableItems.length > 0) {
+      setSelectedDateIso(viewableItems[0].item);
+    }
+  }, []);
+  const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
+
+  const handleJumpToToday = () => {
+    if (dateRange.length > 0 && flatListRef.current) {
+      flatListRef.current.scrollToIndex({ index: dateRange.length - 1, animated: true });
+    }
+  };
+
+  const handlePrevDay = () => {
+    const idx = dateRange.indexOf(selectedDateIso);
+    if (idx > 0 && flatListRef.current) {
+      flatListRef.current.scrollToIndex({ index: idx - 1, animated: true });
+    }
+  };
+
+  const handleNextDay = () => {
+    const idx = dateRange.indexOf(selectedDateIso);
+    if (idx < dateRange.length - 1 && flatListRef.current) {
+      flatListRef.current.scrollToIndex({ index: idx + 1, animated: true });
+    }
+  };
+
+  const renderDailyItem = ({ item: dateIso }: { item: string }) => {
+    const dailyData = dailyDataMap[dateIso] || [];
+    const isLoadingDaily = isLoadingDailyMap[dateIso];
+    const isToday = dateIso === getLocalDateString(new Date());
+
+    if (isLoadingDaily) {
+      return (
+        <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
+          <View style={s.skeletonCard}>
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
+          </View>
+        </ScrollView>
+      );
+    }
+
+    if (dailyData.length === 0) {
+      return (
+        <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
+          <View style={[s.emptyCard, { marginTop: 20 }]}>
+            <View style={s.emptyIconContainer}>
+              <CalendarX size={48} color={COLORS.primary} />
+            </View>
+            <Text style={s.emptyTitle}>No Meal Logs for This Day</Text>
+            <Text style={s.emptySubtitle}>
+              You didn't log any meals on {formatDate(dateIso)}.{'\n'}
+              Start tracking to view your maternal nutrient breakdown.
+            </Text>
+            <TouchableOpacity 
+              style={s.btnPrimary}
+              onPress={() => router.push(`/detect?date=${dateIso}` as any)}
+            >
+              <Camera size={20} color="#FFF" style={{ marginRight: 8 }} />
+              <Text style={s.btnPrimaryText}>Log a Meal for This Day</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      );
+    }
+
+    const tVals = dailyData.reduce(
       (acc, log) => ({
         carbs: acc.carbs + (log.total_carbs_g || 0),
         sugar: acc.sugar + (log.total_sugar_g || 0),
@@ -318,67 +432,35 @@ export default function WellnessScreen() {
       }),
       { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 }
     );
-  }, [dailyData]);
-
-  const estimatedKcal = Math.round((t.carbs * 4) + (t.fat * 9) + 200); // Rough +200 base for protein
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  DAILY TAB
-  // ═══════════════════════════════════════════════════════════════════
-  const renderDaily = () => {
-    if (isLoadingDaily) return <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />;
-
-    if (dailyData.length === 0) {
-      return (
-        <View style={s.emptyCard}>
-          <Activity size={48} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
-          <Text style={s.emptyTitle}>Your day is ready to begin</Text>
-          <Text style={s.emptySubtitle}>Start by logging your first meal.</Text>
-        </View>
-      );
-    }
+    const estKcal = Math.round((tVals.carbs * 4) + (tVals.fat * 9) + 200);
 
     const isHighRisk = gdmCache?.result.riskCategory === 'High Risk';
     const sugarTarget = isHighRisk ? GDM_HIGH_SUGAR_LIMIT : PREGNANCY_NUTRITION_TARGETS.sugarG;
-    const sugarStatus = t.sugar > sugarTarget ? 'exceeded' : t.sugar > sugarTarget * 0.75 ? 'attention' : 'normal';
+    const sugarStatus = tVals.sugar > sugarTarget ? 'exceeded' : tVals.sugar > sugarTarget * 0.75 ? 'attention' : 'normal';
 
-    // ─── DYNAMIC MOVEMENT RECOMMENDATION LOGIC ───
     const getMovementRecommendation = () => {
-      if (sugarStatus === 'exceeded') {
-        return { show: true, title: 'Gentle Movement', text: 'A short, comfortable walk is a simple way to stay active and support balance.' };
-      }
-      if (sugarStatus === 'attention') {
-        return { show: true, title: 'Light Activity', text: 'A 10-minute stroll after your meal helps maintain steady energy levels.' };
-      }
-      if (t.carbs > PREGNANCY_NUTRITION_TARGETS.carbsG) {
-        return { show: true, title: 'Energy Balance', text: 'A gentle walk can be a great way to utilize your energy after a satisfying meal.' };
-      }
-      if (t.iron > 0 && t.iron < PREGNANCY_NUTRITION_TARGETS.ironMg * 0.3) {
-        return { show: true, title: 'Listen to Your Body', text: 'If you are feeling a bit tired, gentle stretching or resting is perfectly fine today.' };
-      }
+      if (sugarStatus === 'exceeded') return { show: true, title: 'Gentle Movement', text: 'A short, comfortable walk is a simple way to stay active and support balance.' };
+      if (sugarStatus === 'attention') return { show: true, title: 'Light Activity', text: 'A 10-minute stroll after your meal helps maintain steady energy levels.' };
+      if (tVals.carbs > PREGNANCY_NUTRITION_TARGETS.carbsG) return { show: true, title: 'Energy Balance', text: 'A gentle walk can be a great way to utilize your energy after a satisfying meal.' };
+      if (tVals.iron > 0 && tVals.iron < PREGNANCY_NUTRITION_TARGETS.ironMg * 0.3) return { show: true, title: 'Listen to Your Body', text: 'If you are feeling a bit tired, gentle stretching or resting is perfectly fine today.' };
       return { show: false, title: '', text: '' };
     };
-
     const movement = getMovementRecommendation();
 
     return (
-      <View style={s.tabContent}>
-        {/* HERO */}
+      <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
         <View style={[s.card, { alignItems: 'center' }]}>
-          <Text style={s.cardTitleCentered}>Today's Nutrition</Text>
-          <SemiCircleGauge current={estimatedKcal} target={1800} color={COLORS.primary} />
+          <Text style={s.cardTitleCentered}>{isToday ? "Today's Nutrition" : `${formatDate(dateIso)} Nutrition`}</Text>
+          <SemiCircleGauge current={estKcal} target={1800} color={COLORS.primary} />
         </View>
 
-        {/* GLYCEMIC STATUS & MOVEMENT */}
         <View style={s.cardRow}>
           <View style={[s.cardHalf, { backgroundColor: sugarStatus === 'exceeded' ? COLORS.accentBg : sugarStatus === 'attention' ? COLORS.amberBg : COLORS.primaryBg }]}>
             <Text style={s.smallTitle}>Glycemic Balance</Text>
             <Text style={[s.statusBig, { color: sugarStatus === 'exceeded' ? COLORS.accent : sugarStatus === 'attention' ? COLORS.amber : COLORS.primary }]}>
               {sugarStatus === 'exceeded' ? 'Target Exceeded' : sugarStatus === 'attention' ? 'Needs Attention' : 'On Track'}
             </Text>
-            <Text style={s.tinyDesc}>
-              {t.sugar.toFixed(1)} / {sugarTarget}g sugar
-            </Text>
+            <Text style={s.tinyDesc}>{tVals.sugar.toFixed(1)} / {sugarTarget}g sugar</Text>
           </View>
           {movement.show && (
             <View style={[s.cardHalf, { backgroundColor: '#F8FAFC' }]}>
@@ -388,45 +470,22 @@ export default function WellnessScreen() {
           )}
         </View>
 
-        {/* NUTRIENT MATRIX */}
         <View style={s.card}>
-          <Text style={s.cardTitle}>Your Nutrient Balance</Text>
+          <Text style={s.cardTitle}>Nutrient Balance</Text>
           <View style={{ flexDirection: 'row' }}>
             <View style={{ flex: 1 }}>
-              <NutrientRing label="Iron" current={t.iron} target={PREGNANCY_NUTRITION_TARGETS.ironMg} unit="mg" color={COLORS.amber} />
-              <NutrientRing label="Calcium" current={t.calcium} target={PREGNANCY_NUTRITION_TARGETS.calciumMg} unit="mg" color={COLORS.secondary} />
-              <NutrientRing label="Fiber" current={t.fiber} target={PREGNANCY_NUTRITION_TARGETS.fiberG} unit="g" color={COLORS.primary} />
+              <NutrientRing label="Iron" current={tVals.iron} target={PREGNANCY_NUTRITION_TARGETS.ironMg} unit="mg" color={COLORS.amber} />
+              <NutrientRing label="Calcium" current={tVals.calcium} target={PREGNANCY_NUTRITION_TARGETS.calciumMg} unit="mg" color={COLORS.secondary} />
+              <NutrientRing label="Fiber" current={tVals.fiber} target={PREGNANCY_NUTRITION_TARGETS.fiberG} unit="g" color={COLORS.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <NutrientRing label="Carbs" current={t.carbs} target={PREGNANCY_NUTRITION_TARGETS.carbsG} unit="g" color={COLORS.primaryLight} />
-              <NutrientRing label="Sugar" current={t.sugar} target={sugarTarget} unit="g" color={COLORS.amber} isUpperLimit={true} />
+              <NutrientRing label="Carbs" current={tVals.carbs} target={PREGNANCY_NUTRITION_TARGETS.carbsG} unit="g" color={COLORS.primaryLight} />
+              <NutrientRing label="Sugar" current={tVals.sugar} target={sugarTarget} unit="g" color={COLORS.amber} isUpperLimit={true} />
             </View>
           </View>
         </View>
 
-        {/* SMART INSIGHTS */}
-        <Text style={s.sectionTitle}>Smart Insights</Text>
-        <View style={{ marginBottom: 16 }}>
-          {t.iron < PREGNANCY_NUTRITION_TARGETS.ironMg * 0.5 && (
-            <SmartInsightCard
-              icon={Info}
-              title="Iron could use a boost"
-              description="You're below today's general iron target. Consider adding an iron-rich food to your next meal."
-              isPositive={false}
-            />
-          )}
-          {t.fiber >= PREGNANCY_NUTRITION_TARGETS.fiberG * 0.5 && (
-            <SmartInsightCard
-              icon={Check}
-              title="Fiber is progressing well"
-              description="Your current intake is helping you move toward today's general fiber target."
-              isPositive={true}
-            />
-          )}
-        </View>
-
-        {/* MEAL TIMELINE */}
-        <Text style={s.sectionTitle}>Today's Meals</Text>
+        <Text style={s.sectionTitle}>Meals</Text>
         <View style={s.timelineContainer}>
           {dailyData.map((log, index) => (
             <View key={log.id} style={s.timelineRow}>
@@ -437,9 +496,7 @@ export default function WellnessScreen() {
               <View style={s.timelineContent}>
                 <View style={s.timelineHeader}>
                   <Text style={s.timelineType}>{log.meal_type}</Text>
-                  <Text style={s.timelineTime}>
-                    {formatLocalTime(log.created_at || log.logged_date)}
-                  </Text>
+                  <Text style={s.timelineTime}>{formatLocalTime(log.created_at || log.logged_date)}</Text>
                 </View>
                 <View style={s.chipsRow}>
                   {log.meal_items?.map((item: any) => (
@@ -449,12 +506,54 @@ export default function WellnessScreen() {
                   ))}
                 </View>
                 <Text style={s.timelineNutr}>
-                  {(log.total_carbs_g || 0).toFixed(0)}g Carbs  •  {(log.total_sugar_g || 0).toFixed(0)}g Sugar  •  {(log.total_fiber_g || 0).toFixed(0)}g Fiber
+                  {(log.total_carbs_g || 0).toFixed(0)}g Carbs • {(log.total_sugar_g || 0).toFixed(0)}g Sugar • {(log.total_fiber_g || 0).toFixed(0)}g Fiber
                 </Text>
               </View>
             </View>
           ))}
         </View>
+      </ScrollView>
+    );
+  };
+
+  const renderDaily = () => {
+    const isToday = selectedDateIso === getLocalDateString(new Date());
+    const idx = dateRange.indexOf(selectedDateIso);
+    const hasPrev = idx > 0;
+    const hasNext = idx < dateRange.length - 1;
+
+    return (
+      <View style={{ flex: 1 }}>
+        <View style={s.dateStrip}>
+          <TouchableOpacity onPress={handlePrevDay} disabled={!hasPrev} style={[s.dateBtn, !hasPrev && { opacity: 0.3 }]}>
+            <ChevronLeft size={24} color={COLORS.textHeader} />
+          </TouchableOpacity>
+          <View style={s.dateCenter}>
+            <Text style={s.dateText}>{isToday ? 'Today, ' : ''}{formatDate(selectedDateIso)}</Text>
+            {!isToday && (
+              <TouchableOpacity onPress={handleJumpToToday} style={s.jumpBtn}>
+                <Text style={s.jumpBtnText}>Jump to Today</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity onPress={handleNextDay} disabled={!hasNext} style={[s.dateBtn, !hasNext && { opacity: 0.3 }]}>
+            <ChevronRight size={24} color={COLORS.textHeader} />
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          ref={flatListRef}
+          data={dateRange}
+          keyExtractor={(item) => item}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          renderItem={renderDailyItem}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          initialScrollIndex={dateRange.length > 0 ? dateRange.length - 1 : 0}
+          getItemLayout={(data, index) => ({ length: width, offset: width * index, index })}
+        />
       </View>
     );
   };
@@ -628,11 +727,14 @@ export default function WellnessScreen() {
       <SegmentedControl active={activeTab} onChange={setActiveTab} />
 
       {/* CONTENT */}
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        {activeTab === 'daily' && renderDaily()}
-        {activeTab === 'weekly' && renderWeekly()}
-        {activeTab === 'gdm' && renderGdm()}
-      </ScrollView>
+      {activeTab === 'daily' ? (
+        renderDaily()
+      ) : (
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          {activeTab === 'weekly' && renderWeekly()}
+          {activeTab === 'gdm' && renderGdm()}
+        </ScrollView>
+      )}
 
       {/* FLOATING ACTION BUTTON */}
       <TouchableOpacity
@@ -731,4 +833,14 @@ const s = StyleSheet.create({
   alertText: { flex: 1, fontSize: 13, lineHeight: 18 },
 
   fab: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 6 },
+  
+  dateStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 12 },
+  dateBtn: { padding: 8, backgroundColor: COLORS.card, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
+  dateCenter: { alignItems: 'center' },
+  dateText: { fontSize: 16, fontWeight: '700', color: COLORS.textHeader },
+  jumpBtn: { marginTop: 4, backgroundColor: COLORS.primaryBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  jumpBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
+  
+  skeletonCard: { backgroundColor: COLORS.card, borderRadius: 24, height: 300, alignItems: 'center', justifyContent: 'center', marginHorizontal: 20 },
+  emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
 });
