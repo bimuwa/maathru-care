@@ -54,10 +54,11 @@ export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionB
       {/* Section title */}
       <Text
         style={{
-          fontSize: 18,
-          fontWeight: '700',
-          color: '#0F172A',
-          marginBottom: 4,
+          fontFamily: 'serif',
+          fontSize: 20,
+          fontWeight: '600',
+          color: '#334155',
+          marginBottom: 6,
         }}
       >
         {hasItems ? '➕ Scan another food' : '📷 Scan your meal'}
@@ -110,7 +111,7 @@ export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionB
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
               <Text
-                style={{ fontSize: 17, fontWeight: '700', color: '#FFFFFF' }}
+                style={{ fontFamily: 'serif', fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}
               >
                 Scan with Camera
               </Text>
@@ -173,7 +174,7 @@ export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionB
         </View>
 
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: '#0F172A', marginBottom: 3 }}>
+          <Text style={{ fontFamily: 'serif', fontSize: 18, fontWeight: '600', color: '#1E293B', marginBottom: 3 }}>
             Pick from Gallery
           </Text>
           <Text style={{ fontSize: 13, color: '#94A3B8' }}>

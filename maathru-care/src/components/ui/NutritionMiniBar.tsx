@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
 
-type NutritionKey = 'carbsG' | 'ironMg' | 'calciumMg' | 'fiberG';
+type NutritionKey = 'carbsG' | 'sugarG' | 'fatG' | 'ironMg' | 'calciumMg' | 'fiberG';
 
 interface NutrientConfig {
   key: NutritionKey;
@@ -12,8 +12,10 @@ interface NutrientConfig {
   emoji: string;
 }
 
-const NUTRIENTS: NutrientConfig[] = [
+const ALL_NUTRIENTS: NutrientConfig[] = [
   { key: 'carbsG',    label: 'Carbs',   unit: 'g',  color: '#F59E0B', emoji: '🌾' },
+  { key: 'sugarG',    label: 'Sugar',   unit: 'g',  color: '#EC4899', emoji: '🍬' },
+  { key: 'fatG',      label: 'Fat',     unit: 'g',  color: '#F97316', emoji: '🥑' },
   { key: 'ironMg',    label: 'Iron',    unit: 'mg', color: '#EF4444', emoji: '🩸' },
   { key: 'calciumMg', label: 'Calcium', unit: 'mg', color: '#3B82F6', emoji: '🦴' },
   { key: 'fiberG',    label: 'Fiber',   unit: 'g',  color: '#10B981', emoji: '🌿' },
@@ -34,14 +36,14 @@ interface NutritionMiniBarProps {
 
 export function NutritionMiniBar({ totals }: NutritionMiniBarProps) {
   const getValue = (key: NutritionKey): number => {
-    const map: Record<NutritionKey, number> = {
-      carbsG:    totals.carbsG,
-      fiberG:    totals.fiberG,
-      ironMg:    totals.ironMg,
-      calciumMg: totals.calciumMg,
-    };
-    return map[key] ?? 0;
+    return totals[key] ?? 0;
   };
+
+  // Only show nutrients that have a value > 0 in the current meal
+  const activeNutrients = ALL_NUTRIENTS.filter((n) => getValue(n.key) > 0);
+  
+  // If no nutrients are > 0, fallback to showing the default core 4
+  const nutrientsToDisplay = activeNutrients.length > 0 ? activeNutrients : ALL_NUTRIENTS.filter(n => ['carbsG', 'ironMg', 'calciumMg', 'fiberG'].includes(n.key));
 
   return (
     <View style={{ gap: 8 }}>
@@ -58,7 +60,7 @@ export function NutritionMiniBar({ totals }: NutritionMiniBarProps) {
         Nutrition Preview
       </Text>
 
-      {NUTRIENTS.map((nutrient) => {
+      {nutrientsToDisplay.map((nutrient) => {
         const current = getValue(nutrient.key);
         const target = PREGNANCY_NUTRITION_TARGETS[nutrient.key];
         const pct = Math.min(100, target > 0 ? Math.round((current / target) * 100) : 0);
@@ -119,3 +121,4 @@ export function NutritionMiniBar({ totals }: NutritionMiniBarProps) {
     </View>
   );
 }
+

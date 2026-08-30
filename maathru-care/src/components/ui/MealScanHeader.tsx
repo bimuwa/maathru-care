@@ -35,7 +35,7 @@ export function MealScanHeader({
           paddingHorizontal: 16,
           paddingVertical: 12,
           borderBottomWidth: 1,
-          borderBottomColor: '#F0FDF4',
+          borderBottomColor: '#F5F5F4',
           marginTop: Platform.OS === 'android' ? 8 : 0,
         }}
       >
@@ -62,10 +62,10 @@ export function MealScanHeader({
         <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
           <Text
             style={{
-              fontSize: 17,
-              fontWeight: '700',
-              color: '#0F172A',
-              letterSpacing: -0.2,
+              fontFamily: 'serif',
+              fontSize: 20,
+              fontWeight: '600',
+              color: '#334155',
             }}
           >
             Meal Scanner
@@ -86,20 +86,20 @@ export function MealScanHeader({
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: '#F0FDF4',
+            backgroundColor: '#F8FAFC',
             paddingHorizontal: 10,
             paddingVertical: 6,
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: '#BBF7D0',
+            borderColor: '#E2E8F0',
           }}
         >
-          <Sparkles size={12} color="#059669" />
+          <Sparkles size={12} color="#64748B" />
           <Text
             style={{
               fontSize: 10,
-              fontWeight: '700',
-              color: '#047857',
+              fontWeight: '600',
+              color: '#64748B',
               marginLeft: 4,
               letterSpacing: 0.5,
               textTransform: 'uppercase',

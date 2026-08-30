@@ -526,7 +526,7 @@ export default function DetectScreen() {
   // ── Main render ─────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F0FDF4' }}>
+    <View style={{ flex: 1, backgroundColor: '#FAF9F6' }}>
       {/* Header */}
       <MealScanHeader
         onBack={handleBack}
@@ -543,24 +543,23 @@ export default function DetectScreen() {
         <View
           style={{
             backgroundColor: '#FFFFFF',
-            paddingTop: 16,
+            paddingTop: 18,
             paddingBottom: 14,
             borderBottomWidth: 1,
-            borderBottomColor: '#F0FDF4',
+            borderBottomColor: '#F5F5F4',
           }}
         >
           <Text
             style={{
-              fontSize: 12,
+              fontFamily: 'serif',
+              fontSize: 16,
               fontWeight: '600',
-              color: '#94A3B8',
-              letterSpacing: 0.8,
-              textTransform: 'uppercase',
+              color: '#57534E',
               paddingHorizontal: 16,
-              marginBottom: 10,
+              marginBottom: 12,
             }}
           >
-            Step 1 — Select Date
+            Select Date
           </Text>
           <DateStrip selectedDate={selectedDate} onDateChange={setSelectedDate} />
         </View>
@@ -569,25 +568,24 @@ export default function DetectScreen() {
         <View
           style={{
             backgroundColor: '#FFFFFF',
-            paddingTop: 14,
+            paddingTop: 18,
             paddingBottom: 16,
             borderBottomWidth: 1,
-            borderBottomColor: '#F0FDF4',
+            borderBottomColor: '#F5F5F4',
             marginBottom: 8,
           }}
         >
           <Text
             style={{
-              fontSize: 12,
+              fontFamily: 'serif',
+              fontSize: 16,
               fontWeight: '600',
-              color: '#94A3B8',
-              letterSpacing: 0.8,
-              textTransform: 'uppercase',
+              color: '#57534E',
               paddingHorizontal: 16,
-              marginBottom: 10,
+              marginBottom: 12,
             }}
           >
-            Step 2 — What meal is this?
+            What meal is this?
           </Text>
           <MealTypePicker selected={mealType} onSelect={setMealType} />
         </View>
@@ -603,8 +601,8 @@ export default function DetectScreen() {
         <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0' }} />
-            <Text style={{ fontSize: 12, color: '#94A3B8', marginHorizontal: 12, fontWeight: '600' }}>
-              SCAN FOOD
+            <Text style={{ fontFamily: 'serif', fontSize: 14, color: '#64748B', marginHorizontal: 14, fontWeight: '600', letterSpacing: 0.5 }}>
+              Scan Food
             </Text>
             <View style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0' }} />
           </View>
@@ -627,7 +625,7 @@ export default function DetectScreen() {
             paddingBottom: Platform.OS === 'ios' ? 28 : 16,
             backgroundColor: '#FFFFFF',
             borderTopWidth: 1,
-            borderTopColor: '#F0FDF4',
+            borderTopColor: '#F5F5F4',
             shadowColor: '#000',
             shadowOffset: { width: 0, height: -4 },
             shadowOpacity: 0.06,
@@ -641,31 +639,44 @@ export default function DetectScreen() {
               disabled={isSaving}
               activeOpacity={0.88}
               style={{
-                borderRadius: 18,
-                paddingVertical: 17,
+                borderRadius: 30, // more rounded, pill-shape
+                paddingVertical: 16,
+                paddingHorizontal: 20,
                 alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'space-between',
                 flexDirection: 'row',
-                backgroundColor: isSaving ? '#A7F3D0' : '#059669',
-                shadowColor: '#059669',
-                shadowOffset: { width: 0, height: 5 },
-                shadowOpacity: 0.4,
-                shadowRadius: 14,
-                elevation: 8,
+                backgroundColor: isSaving ? '#10B981' : '#047857', // classic elegant green
+                shadowColor: '#064E3B',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.2,
+                shadowRadius: 12,
+                elevation: 6,
               }}
             >
-              {isSaving ? (
-                <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
-              ) : (
-                <Text style={{ fontSize: 18, marginRight: 10 }}>✅</Text>
-              )}
-              <Text style={{ fontSize: 17, fontWeight: '700', color: '#FFFFFF' }}>
-                {isSaving
-                  ? 'Saving your meal...'
-                  : `Confirm & Save ${mealType}`}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {isSaving ? (
+                  <ActivityIndicator color="#fff" style={{ marginRight: 12 }} />
+                ) : (
+                  <CheckCircle2 size={22} color="#A7F3D0" style={{ marginRight: 12 }} />
+                )}
+                <Text style={{ fontFamily: 'serif', fontSize: 18, fontWeight: '600', color: '#FFFFFF', letterSpacing: 0.3 }}>
+                  {isSaving
+                    ? 'Saving your meal...'
+                    : `Save ${mealType} Plate`}
+                </Text>
+              </View>
+
               {!isSaving && (
-                <ChevronRight size={20} color="rgba(255,255,255,0.7)" style={{ marginLeft: 6 }} />
+                <View style={{ 
+                  width: 32, 
+                  height: 32, 
+                  borderRadius: 16, 
+                  backgroundColor: 'rgba(255,255,255,0.15)', 
+                  alignItems: 'center', 
+                  justifyContent: 'center' 
+                }}>
+                  <ChevronRight size={18} color="#FFFFFF" strokeWidth={2.5} />
+                </View>
               )}
             </TouchableOpacity>
           </Animated.View>
