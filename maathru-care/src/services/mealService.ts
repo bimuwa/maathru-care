@@ -156,5 +156,36 @@ export const mealService = {
       return [];
     }
     return data;
-  }
+  },
+
+  /**
+   * Returns the aggregated nutrition totals logged so far today.
+   * Used by the pre-meal GDM warning check in detect.tsx.
+   */
+  async getTodayTotals(userId: string): Promise<{
+    carbs: number; sugar: number; fiber: number; fat: number; iron: number; calcium: number;
+  }> {
+    const today = new Date();
+    const { data, error } = await supabase
+      .from('meal_logs')
+      .select('total_carbs_g, total_sugar_g, total_fiber_g, total_fat_g, total_iron_mg, total_calcium_mg')
+      .eq('user_id', userId)
+      .eq('logged_date', today.toISOString().split('T')[0]);
+
+    if (error || !data) {
+      return { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 };
+    }
+
+    return data.reduce(
+      (acc, log) => ({
+        carbs:   acc.carbs   + (log.total_carbs_g   || 0),
+        sugar:   acc.sugar   + (log.total_sugar_g   || 0),
+        fiber:   acc.fiber   + (log.total_fiber_g   || 0),
+        fat:     acc.fat     + (log.total_fat_g     || 0),
+        iron:    acc.iron    + (log.total_iron_mg   || 0),
+        calcium: acc.calcium + (log.total_calcium_mg || 0),
+      }),
+      { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 }
+    );
+  },
 };

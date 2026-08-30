@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,13 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  Modal,
 } from 'react-native';
-import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw } from 'lucide-react-native';
+import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // UI Components
 import { MealScanHeader } from '@/components/ui/MealScanHeader';
@@ -23,15 +25,36 @@ import { ScanActionButtons } from '@/components/ui/ScanActionButtons';
 import { DetectionResultCard } from '@/components/ui/DetectionResultCard';
 import { MealImagePreview } from '@/components/ui/MealImagePreview';
 import { MealSaveSuccessModal } from '@/components/ui/MealSaveSuccessModal';
+import { GDMFoodWarningModal, FoodWarning } from '@/components/ui/GDMFoodWarningModal';
 
 // API & Services
 import { analyzeMealImage, Detection } from '@/services/api/foodDetector';
 import { mealService } from '@/services/mealService';
+import { gdmCacheService } from '@/services/gdmCacheService';
 import { ScanState, MealItem } from '@/types/meal';
 import { ACTIVE_USER_ID } from '@/constants/userConfig';
+import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
+import { GDMRiskResponse } from '@/types/gdm';
 
 export default function DetectScreen() {
   const router = useRouter();
+
+  // ── GDM Lock State ──────────────────────────────────────
+  const [hasGdmRisk, setHasGdmRisk] = useState<boolean | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      const checkRisk = async () => {
+        const riskCat = await gdmCacheService.getRiskCategory(ACTIVE_USER_ID);
+        if (isActive) {
+          setHasGdmRisk(!!riskCat);
+        }
+      };
+      checkRisk();
+      return () => { isActive = false; };
+    }, [])
+  );
 
   // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
@@ -49,6 +72,13 @@ export default function DetectScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // ── GDM Warning Modal state ─────────────────────────────
+  const [showGdmWarning, setShowGdmWarning] = useState(false);
+  const [gdmWarnings, setGdmWarnings] = useState<FoodWarning[]>([]);
+  const [gdmRiskCategory, setGdmRiskCategory] = useState<GDMRiskResponse['riskCategory'] | null>(null);
+  const [pendingMealItems, setPendingMealItems] = useState<MealItem[]>([]);
+  const [pendingFoodNames, setPendingFoodNames] = useState<string[]>([]);
 
   // ── Save button animation ───────────────────────────────────
   const saveBtnScale = useRef(new Animated.Value(1)).current;
@@ -188,14 +218,34 @@ export default function DetectScreen() {
     );
   };
 
+  // Commit pending items to the plate (called after warning modal dismissal)
+  const commitPendingItems = (items: MealItem[]) => {
+    setMealItems((prev) => {
+      const nextItems = [...prev];
+      for (const fetched of items) {
+        const existingIndex = nextItems.findIndex((i) => i.foodId === fetched.foodId);
+        if (existingIndex >= 0) {
+          nextItems[existingIndex] = {
+            ...nextItems[existingIndex],
+            servingMultiplier: nextItems[existingIndex].servingMultiplier + fetched.servingMultiplier,
+          };
+        } else {
+          nextItems.push(fetched);
+        }
+      }
+      return nextItems;
+    });
+    resetScanWorkspace();
+  };
+
   const handleAddSelectedToMeal = async () => {
     if (selectedDetectionIds.length === 0) return;
 
     setIsLookingUp(true);
-    
+
     // Group selected detections by food_id to count them
     const quantityMap: Record<string, { count: number; confidence: number }> = {};
-    
+
     for (const id of selectedDetectionIds) {
       const index = parseInt(id.split('-').pop() || '0', 10);
       const detection = currentDetections[index];
@@ -215,7 +265,6 @@ export default function DetectScreen() {
 
     for (const [foodId, data] of Object.entries(quantityMap)) {
       const nutritionData = await mealService.getNutritionForFood(foodId);
-
       if (nutritionData) {
         fetchedItems.push({
           id: Math.random().toString(36).substring(7),
@@ -242,26 +291,72 @@ export default function DetectScreen() {
 
     setIsLookingUp(false);
 
-    if (fetchedItems.length > 0) {
-      setMealItems((prev) => {
-        const nextItems = [...prev];
-        for (const fetched of fetchedItems) {
-          const existingIndex = nextItems.findIndex((i) => i.foodId === fetched.foodId);
-          if (existingIndex >= 0) {
-            // merge
-            nextItems[existingIndex] = {
-              ...nextItems[existingIndex],
-              servingMultiplier: nextItems[existingIndex].servingMultiplier + fetched.servingMultiplier,
-            };
-          } else {
-            // add
-            nextItems.push(fetched);
-          }
+    if (fetchedItems.length === 0) return;
+
+    // ── GDM & Nutrition Warning Check ─────────────────────────────────
+    try {
+      const [riskCat, todayTotals] = await Promise.all([
+        gdmCacheService.getRiskCategory(ACTIVE_USER_ID),
+        mealService.getTodayTotals(ACTIVE_USER_ID),
+      ]);
+
+      // Totals from the new food (all items combined)
+      const newSugar  = fetchedItems.reduce((s, i) => s + i.sugarG  * i.servingMultiplier, 0);
+      const newCarbs  = fetchedItems.reduce((s, i) => s + i.carbsG  * i.servingMultiplier, 0);
+      const newFat    = fetchedItems.reduce((s, i) => s + i.fatG    * i.servingMultiplier, 0);
+
+      const warnings: FoodWarning[] = [];
+      const sugarLimit = riskCat === 'High Risk' ? 20 : PREGNANCY_NUTRITION_TARGETS.sugarG;
+
+      // Risk specific warnings
+      if (riskCat === 'High Risk') {
+        if (newSugar > 8)
+          warnings.push({ severity: 'high', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). High Risk GDM should keep per-meal sugar very low.` });
+        if (newCarbs > 50)
+          warnings.push({ severity: 'high', message: `🍞 Carbs: Adds ${newCarbs.toFixed(1)}g (Today's total: ${(todayTotals.carbs + newCarbs).toFixed(1)}g). This is high for a single meal.` });
+      } else if (riskCat === 'Moderate Risk') {
+        if (newSugar > 12)
+          warnings.push({ severity: 'medium', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). Consider smaller portions.` });
+      } else if (!riskCat) {
+        // Unknown risk: flag if it's generally high
+        if (newSugar > 10)
+          warnings.push({ severity: 'medium', message: `🍬 Sugar: This adds ${newSugar.toFixed(1)}g. (Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g). Is this safe for you?` });
+        if (newCarbs > 60)
+          warnings.push({ severity: 'medium', message: `🍞 Carbs: This adds ${newCarbs.toFixed(1)}g. (Total will be ${(todayTotals.carbs + newCarbs).toFixed(1)}g).` });
+      }
+
+      // Daily totals warnings
+      if (todayTotals.sugar + newSugar > sugarLimit) {
+        if (!warnings.some(w => w.message.includes('Sugar Limit'))) {
+          warnings.push({ severity: riskCat === 'High Risk' ? 'high' : 'medium', message: `⚠️ Daily Sugar Limit: Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g, exceeding your ${sugarLimit}g limit.` });
         }
-        return nextItems;
-      });
-      resetScanWorkspace();
+      }
+
+      if (todayTotals.carbs + newCarbs > 200) {
+        if (!warnings.some(w => w.message.includes('Carbs'))) {
+          warnings.push({ severity: 'medium', message: `🍞 Carbs: Total will reach ${(todayTotals.carbs + newCarbs).toFixed(1)}g today. Consider a lighter option.` });
+        }
+      }
+
+      if (newFat > 20) {
+        warnings.push({ severity: 'info', message: `🥑 Fat: This food adds ${newFat.toFixed(1)}g of fat. Choose lean options where possible.` });
+      }
+
+      if (warnings.length > 0) {
+        // Show warning modal
+        setPendingMealItems(fetchedItems);
+        setPendingFoodNames(fetchedItems.map((i) => i.name.replace(/_/g, ' ')));
+        setGdmWarnings(warnings);
+        setGdmRiskCategory(riskCat);
+        setShowGdmWarning(true);
+        return;
+      }
+    } catch {
+      // If warning check fails, proceed without warning
     }
+
+    // No warnings — add directly
+    commitPendingItems(fetchedItems);
   };
 
   const handleRemoveMealItem = (idToRemove: string) => {
@@ -558,7 +653,9 @@ export default function DetectScreen() {
     );
   };
 
-  // ── Main render ─────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════
+  //  RENDER
+  // ════════════════════════════════════════════════════════════════
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FAF9F6' }}>
@@ -735,6 +832,56 @@ export default function DetectScreen() {
           resetScanWorkspace();
         }}
       />
+
+      {/* ── GDM Food Warning Modal ─────────────────────────────── */}
+      <GDMFoodWarningModal
+        visible={showGdmWarning}
+        riskCategory={gdmRiskCategory}
+        foodNames={pendingFoodNames}
+        warnings={gdmWarnings}
+        onAddAnyway={() => {
+          setShowGdmWarning(false);
+          commitPendingItems(pendingMealItems);
+        }}
+        onSkip={() => {
+          setShowGdmWarning(false);
+          setPendingMealItems([]);
+          setPendingFoodNames([]);
+          setGdmWarnings([]);
+        }}
+        onCheckRisk={() => {
+          setShowGdmWarning(false);
+          setPendingMealItems([]);
+          setPendingFoodNames([]);
+          setGdmWarnings([]);
+          router.push('/wellness?tab=gdm');
+        }}
+      />
+
+      {/* ── GDM Lock Modal (Blocks interaction if GDM is unchecked) ── */}
+      <Modal visible={hasGdmRisk === false} transparent animationType="fade" statusBarTranslucent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ alignItems: 'center', backgroundColor: '#FFFFFF', padding: 32, borderRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 4 }}>
+            <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+              <Lock size={40} color="#047857" />
+            </View>
+            <Text style={{ fontSize: 22, fontWeight: '700', color: '#0F172A', textAlign: 'center', marginBottom: 12 }}>
+              Scanner Locked
+            </Text>
+            <Text style={{ fontSize: 15, color: '#64748B', textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
+              To provide you with safe and personalized nutritional insights, we need to assess your Gestational Diabetes (GDM) risk first.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: '#047857', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 16, width: '100%', alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+              onPress={() => router.push('/wellness?tab=gdm')}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginRight: 8 }}>Check GDM Risk Now</Text>
+              <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
