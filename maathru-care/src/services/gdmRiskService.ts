@@ -54,11 +54,34 @@ export const gdmRiskService = {
 
       const result = await response.json();
       
-      // Determine risk category if the API doesn't provide it clearly, or map from API response
       let riskCategory: 'Low Risk' | 'Moderate Risk' | 'High Risk' = 'Low Risk';
       let message = 'Continue maintaining balanced meals and regular prenatal care.';
 
-      // Fallback categorization based on raw prediction value if no category is returned
+      // Handle new API response format
+      if (result.success !== undefined) {
+        if (result.risk_level) {
+          riskCategory = result.risk_level;
+        } else if (result.diabetes_risk === true) {
+          riskCategory = 'High Risk';
+        }
+        
+        if (result.recommendation) {
+          message = result.recommendation;
+        }
+        
+        const probability = result.risk_percentage !== undefined 
+          ? result.risk_percentage / 100 
+          : (result.diabetes_risk ? 0.9 : 0.1);
+
+        return {
+          prediction: result.diabetes_risk ? 1 : 0,
+          probability,
+          riskCategory,
+          message
+        };
+      }
+
+      // Fallback for old format
       if (result.prediction === 1) {
          riskCategory = 'High Risk';
          message = 'Please discuss this result with your healthcare professional for appropriate evaluation and guidance.';
@@ -67,8 +90,7 @@ export const gdmRiskService = {
          message = 'Continue maintaining balanced meals and regular prenatal care.';
       }
 
-      // If the API returns a probability score, we can be more nuanced
-      if (result.probability) {
+      if (result.probability !== undefined) {
         if (result.probability >= 0.7) {
           riskCategory = 'High Risk';
           message = 'Please discuss this result with your healthcare professional for appropriate evaluation and guidance.';
@@ -79,7 +101,7 @@ export const gdmRiskService = {
       }
 
       return {
-        prediction: result.prediction,
+        prediction: result.prediction !== undefined ? result.prediction : (riskCategory === 'High Risk' ? 1 : 0),
         probability: result.probability,
         riskCategory,
         message

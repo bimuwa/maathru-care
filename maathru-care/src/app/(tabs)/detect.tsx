@@ -61,14 +61,14 @@ export default function DetectScreen() {
   // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
   const [mealType, setMealType] = useState<string>(getSmartMealDefault());
-  
+
   const initialDate = React.useMemo(() => {
     if (!date) return new Date();
     const [y, m, d] = date.split('-');
-    if (y && m && d) return new Date(Number(y), Number(m)-1, Number(d));
+    if (y && m && d) return new Date(Number(y), Number(m) - 1, Number(d));
     return new Date();
   }, [date]);
-  
+
   const [selectedDate, setSelectedDate] = useState<Date>(initialDate);
 
   // ── Active scan state ───────────────────────────────────────
@@ -311,9 +311,9 @@ export default function DetectScreen() {
       ]);
 
       // Totals from the new food (all items combined)
-      const newSugar  = fetchedItems.reduce((s, i) => s + i.sugarG  * i.servingMultiplier, 0);
-      const newCarbs  = fetchedItems.reduce((s, i) => s + i.carbsG  * i.servingMultiplier, 0);
-      const newFat    = fetchedItems.reduce((s, i) => s + i.fatG    * i.servingMultiplier, 0);
+      const newSugar = fetchedItems.reduce((s, i) => s + i.sugarG * i.servingMultiplier, 0);
+      const newCarbs = fetchedItems.reduce((s, i) => s + i.carbsG * i.servingMultiplier, 0);
+      const newFat = fetchedItems.reduce((s, i) => s + i.fatG * i.servingMultiplier, 0);
 
       const warnings: FoodWarning[] = [];
       const sugarLimit = riskCat === 'High Risk' ? 20 : PREGNANCY_NUTRITION_TARGETS.sugarG;
@@ -386,7 +386,7 @@ export default function DetectScreen() {
     setIsSaving(true);
     try {
       await mealService.saveMealSession(ACTIVE_USER_ID, mealType, selectedDate, mealItems);
-      
+
       // Show custom elegant modal instead of generic OS alert
       setShowSuccessModal(true);
 
@@ -810,13 +810,13 @@ export default function DetectScreen() {
               </View>
 
               {!isSaving && (
-                <View style={{ 
-                  width: 32, 
-                  height: 32, 
-                  borderRadius: 16, 
-                  backgroundColor: 'rgba(255,255,255,0.15)', 
-                  alignItems: 'center', 
-                  justifyContent: 'center' 
+                <View style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: 'rgba(255,255,255,0.15)',
+                  alignItems: 'center',
+                  justifyContent: 'center'
                 }}>
                   <ChevronRight size={18} color="#FFFFFF" strokeWidth={2.5} />
                 </View>

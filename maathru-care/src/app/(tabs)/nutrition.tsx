@@ -290,7 +290,6 @@ export default function WellnessScreen() {
   const [gdmExpired, setGdmExpired] = useState(true);
   const [daysUntilNext, setDaysUntilNext] = useState<number | null>(null);
   const [isCheckingGdm, setIsCheckingGdm] = useState(false);
-  const [assessmentStage, setAssessmentStage] = useState(0);
   const [gdmError, setGdmError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -329,33 +328,15 @@ export default function WellnessScreen() {
   const handleCheckGdm = async () => {
     setIsCheckingGdm(true);
     setGdmError(null);
-    setAssessmentStage(0);
-    
-    let currentStage = 0;
-    const stageInterval = setInterval(() => {
-      currentStage = Math.min(currentStage + 1, 3);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setAssessmentStage(currentStage);
-    }, 600);
-
     try {
       const profile = await gdmRiskService.getMaternalProfile(ACTIVE_USER_ID);
       if (!profile) {
-        clearInterval(stageInterval);
         setGdmError('Could not load your maternal health profile. Please complete your profile first.');
-        setIsCheckingGdm(false);
         return;
       }
-      
-      const apiPromise = gdmRiskService.assessRisk(profile);
-      const minDelayPromise = new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const [result] = await Promise.all([apiPromise, minDelayPromise]);
-      
+      const result = await gdmRiskService.assessRisk(profile);
       const gestationalWeek = profile.gestational_week || 24;
       const entry = await gdmCacheService.save(ACTIVE_USER_ID, result, gestationalWeek);
-      
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setGdmCache(entry);
       setGdmExpired(false);
       setDaysUntilNext(
@@ -364,7 +345,6 @@ export default function WellnessScreen() {
     } catch (err: any) {
       setGdmError(err.message || 'Risk assessment failed. Please try again.');
     } finally {
-      clearInterval(stageInterval);
       setIsCheckingGdm(false);
     }
   };
@@ -655,76 +635,6 @@ export default function WellnessScreen() {
       filled = fields.filter(f => maternalProfile[f] !== undefined && maternalProfile[f] !== null).length;
     }
 
-    if (isCheckingGdm) {
-      const isStage1 = assessmentStage >= 1;
-      const isStage2 = assessmentStage >= 2;
-      const isStage3 = assessmentStage >= 3;
-
-      return (
-        <View style={s.tabContent}>
-          <View style={s.card}>
-            <View style={{ alignItems: 'center', marginBottom: 24 }}>
-              <View style={s.pulsingIconContainer}>
-                <Activity size={32} color={COLORS.primary} />
-              </View>
-              <Text style={s.cardTitleCentered}>GDM Risk Assessment</Text>
-            </View>
-
-            <View style={s.assessmentStep}>
-              <View style={s.stepIcon}>
-                {isStage1 ? <CheckCircle2 size={20} color={COLORS.primary} /> : <ActivityIndicator size="small" color={COLORS.primary} />}
-              </View>
-              <View style={s.stepTextContainer}>
-                <Text style={s.stepTitle}>Reviewing maternal profile</Text>
-                {isStage1 && maternalProfile?.gestational_week && (
-                  <Text style={s.stepSubtitle}>Gestational age — {maternalProfile.gestational_week} weeks</Text>
-                )}
-              </View>
-            </View>
-
-            {isStage1 && (
-              <View style={s.assessmentStep}>
-                <View style={s.stepIcon}>
-                  {isStage2 ? <CheckCircle2 size={20} color={COLORS.primary} /> : <ActivityIndicator size="small" color={COLORS.primary} />}
-                </View>
-                <View style={s.stepTextContainer}>
-                  <Text style={s.stepTitle}>Checking health indicators</Text>
-                  {isStage2 && maternalProfile?.bmi && (
-                    <Text style={s.stepSubtitle}>BMI — {maternalProfile.bmi}</Text>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {isStage2 && (
-              <View style={s.assessmentStep}>
-                <View style={s.stepIcon}>
-                  {isStage3 ? <CheckCircle2 size={20} color={COLORS.primary} /> : <ActivityIndicator size="small" color={COLORS.primary} />}
-                </View>
-                <View style={s.stepTextContainer}>
-                  <Text style={s.stepTitle}>Reviewing glucose information</Text>
-                  {isStage3 && maternalProfile?.ogtt && (
-                    <Text style={s.stepSubtitle}>OGTT — {maternalProfile.ogtt} mg/dL</Text>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {isStage3 && (
-              <View style={s.assessmentStep}>
-                <View style={s.stepIcon}>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                </View>
-                <View style={s.stepTextContainer}>
-                  <Text style={s.stepTitle}>Generating risk estimate...</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      );
-    }
-
     if (hasValidCache && result) {
       const isHigh = result.riskCategory === 'High Risk';
       const isMod = result.riskCategory === 'Moderate Risk';
@@ -781,7 +691,7 @@ export default function WellnessScreen() {
             disabled={isCheckingGdm || filled < fields.length}
             style={[s.btnPrimary, (filled < fields.length) && { opacity: 0.5 }]}
           >
-            <Text style={s.btnPrimaryText}>Calculate Risk</Text>
+            {isCheckingGdm ? <ActivityIndicator color="#FFF" /> : <Text style={s.btnPrimaryText}>Calculate Risk</Text>}
           </TouchableOpacity>
           {filled < fields.length && (
             <Text style={s.disclaimerText}>Complete your health profile in settings to calculate your risk estimate.</Text>
@@ -933,11 +843,4 @@ const s = StyleSheet.create({
   
   skeletonCard: { backgroundColor: COLORS.card, borderRadius: 24, height: 300, alignItems: 'center', justifyContent: 'center', marginHorizontal: 20 },
   emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  
-  pulsingIconContainer: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.primaryBg, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  assessmentStep: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
-  stepIcon: { width: 24, alignItems: 'center', marginRight: 12, marginTop: 2 },
-  stepTextContainer: { flex: 1 },
-  stepTitle: { fontSize: 15, fontWeight: '600', color: COLORS.textHeader, marginBottom: 4 },
-  stepSubtitle: { fontSize: 13, color: COLORS.textMain },
 });
