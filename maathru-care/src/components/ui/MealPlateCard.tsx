@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { UtensilsCrossed, X, Sparkles } from 'lucide-react-native';
+import { UtensilsCrossed, X, Sparkles, Camera } from 'lucide-react-native';
 import { MealItem } from '@/types/meal';
 import { NutritionMiniBar } from './NutritionMiniBar';
 
@@ -322,9 +322,12 @@ export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardPr
       {/* Subtitle / Item Count */}
       <View style={{ alignItems: 'center', marginBottom: 4 }}>
         {items.length === 0 ? (
-          <Text style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center' }}>
-            Use the camera below to scan food 📷
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', marginRight: 6 }}>
+              Use the camera below to scan food
+            </Text>
+            <Camera size={14} color="#94A3B8" />
+          </View>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Sparkles size={13} color="#059669" />

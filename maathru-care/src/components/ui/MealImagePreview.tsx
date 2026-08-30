@@ -1,9 +1,6 @@
-import React from 'react';
-import { View, Image, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Image, ActivityIndicator, Text, Animated, Easing } from 'react-native';
 import { Sparkles } from 'lucide-react-native';
-import { Detection } from '@/services/api/foodDetector'; // Will use path alias if available, else relative
-
-// Using relative path for robustness
 import { Detection as DetectionType } from '../../services/api/foodDetector';
 
 interface MealImagePreviewProps {
@@ -13,42 +10,102 @@ interface MealImagePreviewProps {
   detections?: DetectionType[];
 }
 
-export function MealImagePreview({ 
-  imageUri, 
-  isAnalyzing, 
+export function MealImagePreview({
+  imageUri,
+  isAnalyzing,
   isCompressing,
   detections = []
 }: MealImagePreviewProps) {
-  
+  const scanAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isAnalyzing || isCompressing) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanAnim, {
+            toValue: 1,
+            duration: 1600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: false,
+          }),
+          Animated.timing(scanAnim, {
+            toValue: 0,
+            duration: 1600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: false,
+          }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      scanAnim.setValue(0);
+    }
+  }, [isAnalyzing, isCompressing]);
+
+  const scanTop = scanAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '98%'],
+  });
+
   return (
-    <View className="w-full aspect-square bg-slate-100 rounded-3xl overflow-hidden relative mb-6 shadow-sm border border-slate-200">
-      <Image 
-        source={{ uri: imageUri }} 
-        className="w-full h-full"
+    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#F8FAFC', borderRadius: 24, overflow: 'hidden', marginBottom: 24, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 4 }}>
+      <Image
+        source={{ uri: imageUri }}
+        style={{ width: '100%', height: '100%' }}
         resizeMode="cover"
       />
-      
+
       {/* Scanning / Loading Overlay */}
       {(isAnalyzing || isCompressing) && (
-        <View className="absolute inset-0 bg-emerald-900/30 items-center justify-center">
-          <View className="bg-white/90 p-4 rounded-2xl items-center justify-center shadow-lg">
-            <ActivityIndicator size="large" color="#15803D" className="mb-2" />
-            <View className="flex-row items-center">
-              <Sparkles size={14} color="#0D9488" className="mr-1.5" />
-              <Text className="text-emerald-900 font-semibold text-sm">
-                {isCompressing ? 'Preparing photo...' : 'Analyzing meal...'}
-              </Text>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.25)', overflow: 'hidden' }}>
+
+          {/* Animated Scan Line */}
+          <Animated.View
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              height: 3,
+              backgroundColor: '#34D399',
+              top: scanTop,
+              shadowColor: '#10B981',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 1,
+              shadowRadius: 15,
+              elevation: 10,
+            }}
+          >
+            {/* Glowing trail above the line */}
+            <View style={{ position: 'absolute', bottom: 3, left: 0, right: 0, height: 80, backgroundColor: 'rgba(52, 211, 153, 0.2)' }} />
+          </Animated.View>
+
+          {/* Centered Status Badge */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              paddingHorizontal: 22,
+              paddingVertical: 16,
+              borderRadius: 24,
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.15,
+              shadowRadius: 20,
+              elevation: 10
+            }}>
+              <ActivityIndicator size="small" color="#059669" style={{ marginBottom: 8, transform: [{ scale: 1.1 }] }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Sparkles size={16} color="#059669" style={{ marginRight: 6 }} />
+                <Text style={{ fontFamily: 'serif', color: '#047857', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 }}>
+                  {isCompressing ? 'Preparing photo...' : 'Scanning meal...'}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
       )}
-
-      {/* Optional: We could draw bounding boxes here using absolute positioning if the API provides accurate coords,
-          but the prompt advises to prioritize clean UI over inaccurate boxes. For now, we omit the overlay boxes
-          unless guaranteed accurate, to keep the maternal UI trustworthy. */}
     </View>
   );
 }
-
-// Added Text import since we use it above
-import { Text } from 'react-native';

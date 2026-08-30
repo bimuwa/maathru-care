@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Animated } from 'react-native';
-import { Camera, Image as ImageIcon } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Plus, ScanLine } from 'lucide-react-native';
 
 interface ScanActionButtonsProps {
   onCamera: () => void;
@@ -52,17 +52,23 @@ export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionB
   return (
     <View style={{ paddingHorizontal: 16 }}>
       {/* Section title */}
-      <Text
-        style={{
-          fontFamily: 'serif',
-          fontSize: 20,
-          fontWeight: '600',
-          color: '#334155',
-          marginBottom: 6,
-        }}
-      >
-        {hasItems ? '➕ Scan another food' : '📷 Scan your meal'}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        {hasItems ? (
+          <Plus size={22} color="#059669" style={{ marginRight: 8 }} />
+        ) : (
+          <ScanLine size={22} color="#334155" style={{ marginRight: 8 }} />
+        )}
+        <Text
+          style={{
+            fontFamily: 'serif',
+            fontSize: 20,
+            fontWeight: '600',
+            color: '#334155',
+          }}
+        >
+          {hasItems ? 'Scan another food' : 'Scan your meal'}
+        </Text>
+      </View>
       <Text
         style={{
           fontSize: 14,
