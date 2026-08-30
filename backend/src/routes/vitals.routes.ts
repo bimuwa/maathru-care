@@ -15,7 +15,7 @@ const VitalsLogSchema = z.object({
 });
 
 // POST /api/v1/vitals/log
-router.post('/log', (req: Request, res: Response): void => {
+router.post('/log', async (req: Request, res: Response): Promise<void> => {
   try {
     const parsed = VitalsLogSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -25,31 +25,72 @@ router.post('/log', (req: Request, res: Response): void => {
 
     const { patientId, logDate, systolicBP, diastolicBP, weightKg, pulseRate, notes } = parsed.data;
 
-    const newLog = {
-      id: `vitals-${Date.now()}`,
-      patientId,
-      logDate,
-      systolicBP,
-      diastolicBP,
-      weightKg,
-      ...(pulseRate !== undefined && { pulseRate }),
-      ...(notes !== undefined && { notes }),
-      createdAt: new Date().toISOString(),
+    const supabase = db.getSupabase();
+    const { data: newLog, error } = await supabase
+      .from('vitals_logs')
+      .insert({
+        patient_id: patientId,
+        log_date: logDate,
+        systolic_bp: systolicBP,
+        diastolic_bp: diastolicBP,
+        weight_kg: weightKg,
+        pulse_rate: pulseRate,
+        notes: notes
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    const responseLog = {
+      id: newLog.id,
+      patientId: newLog.patient_id,
+      logDate: newLog.log_date,
+      systolicBP: newLog.systolic_bp,
+      diastolicBP: newLog.diastolic_bp,
+      weightKg: newLog.weight_kg,
+      pulseRate: newLog.pulse_rate,
+      notes: newLog.notes,
+      createdAt: newLog.created_at || new Date().toISOString(),
     };
 
-    db.vitalsLogs.unshift(newLog);
-    res.status(201).json({ success: true, log: newLog });
+    res.status(201).json({ success: true, log: responseLog });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // GET /api/v1/vitals/history/:patientId
-router.get('/history/:patientId', (req: Request, res: Response): void => {
+router.get('/history/:patientId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { patientId } = req.params;
-    const logs = db.vitalsLogs.filter(v => v.patientId === patientId);
-    res.status(200).json({ success: true, logs });
+    
+    const supabase = db.getSupabase();
+    const { data: logs, error } = await supabase
+      .from('vitals_logs')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('log_date', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const responseLogs = logs.map(log => ({
+      id: log.id,
+      patientId: log.patient_id,
+      logDate: log.log_date,
+      systolicBP: log.systolic_bp,
+      diastolicBP: log.diastolic_bp,
+      weightKg: log.weight_kg,
+      pulseRate: log.pulse_rate,
+      notes: log.notes,
+      createdAt: log.created_at || new Date().toISOString(),
+    }));
+
+    res.status(200).json({ success: true, logs: responseLogs });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

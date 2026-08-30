@@ -79,8 +79,10 @@ export default function VitalsScreen() {
     try {
       const res = await api.getVitalsHistory(user.id);
       if (res.success) setHistory(res.history || []);
-    } catch { }
-    finally { setLoading(false); }
+      else setHistory([]); // ✅ Empty state on failure
+    } catch {
+      setHistory([]); // ✅ Empty state on error (e.g. table not created yet)
+    } finally { setLoading(false); }
   }, [user?.id]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);

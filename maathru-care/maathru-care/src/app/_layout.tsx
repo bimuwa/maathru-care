@@ -25,8 +25,6 @@ export default function RootLayout() {
         <Stack.Screen name="risk-result" options={{ headerShown: false }} />
         <Stack.Screen name="mother-doctor-profile" options={{ headerShown: false }} />
         <Stack.Screen name="mother-chat" options={{ headerShown: false }} />
-        <Stack.Screen name="vitals" options={{ headerShown: false }} />
-        <Stack.Screen name="medications" options={{ headerShown: false }} />
       </Stack>
     </AuthProvider>
   );

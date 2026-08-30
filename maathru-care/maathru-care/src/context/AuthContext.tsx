@@ -46,10 +46,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
         if (stored) {
           const parsed: AuthUser = JSON.parse(stored);
-          setUser(parsed);
+          // ✅ Validate that the stored ID is a real UUID (Supabase format).
+          // Old IDs were like "mother-1234567890" — stale from before Supabase migration.
+          // If old format is found, clear the session so user logs in fresh.
+          const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed.id || '');
+          if (!isValidUUID) {
+            console.warn('[AuthContext] Stale session with non-UUID ID detected — clearing session.');
+            await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          } else {
+            setUser(parsed);
+          }
         }
       } catch (e) {
         console.warn('[AuthContext] Failed to load session:', e);
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       } finally {
         setIsLoading(false);
       }

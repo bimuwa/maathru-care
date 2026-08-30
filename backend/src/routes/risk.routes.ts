@@ -26,9 +26,8 @@ const MaternalRiskSchema = z.object({
 router.post('/predict', async (req: Request, res: Response): Promise<void> => {
   try {
     const validated = MaternalRiskSchema.parse(req.body);
-
-    // Use the actual patientId from the request — never override with a hardcoded demo ID
     const patientId = validated.patientId || 'p-sarah-001';
+    const supabase = db.getSupabase();
 
     const predictionResult = await AiClientService.predictRisk(validated);
 
@@ -39,38 +38,53 @@ router.post('/predict', async (req: Request, res: Response): Promise<void> => {
       createdAt: new Date().toISOString(),
     };
 
-    // Save to in-memory history (latest first)
-    db.riskAssessments.unshift(assessment);
+    // Save to Supabase risk_assessments
+    await supabase.from('risk_assessments').insert({
+      id: assessment.id,
+      patient_id: patientId,
+      risk_level: predictionResult.riskLevel,
+      high_risk_probability: predictionResult.highRiskProbability,
+      input_data: validated,
+      shap_values: (predictionResult as any).shapValues,
+      created_at: assessment.createdAt
+    });
 
-    // Update patient's current risk level in db.profiles
-    const patient = db.profiles.find(p => p.id === patientId);
-    if (patient) {
-      patient.currentRiskLevel = predictionResult.riskLevel;
-      patient.currentRiskProbability = predictionResult.highRiskProbability;
-      patient.hasActiveAlert = predictionResult.isAlertRequired;
-    }
+    // Update patient's current risk level in users table
+    await supabase.from('users').update({
+       current_risk_level: predictionResult.riskLevel,
+       current_risk_probability: predictionResult.highRiskProbability,
+       has_active_alert: predictionResult.isAlertRequired
+    }).eq('id', patientId);
 
     // Auto-create an alert for the assigned doctor if risk is High or Very High
     if (predictionResult.isAlertRequired) {
-      const existingPendingAlert = db.alerts.find(
-        a => a.patientId === patientId && a.status === 'Pending'
-      );
-      // Only create a new alert if there isn't already a pending one for this patient
-      if (!existingPendingAlert) {
-        db.alerts.unshift({
+      const { data: existingAlerts } = await supabase
+        .from('alerts')
+        .select('id')
+        .eq('patient_id', patientId)
+        .eq('status', 'Pending');
+      
+      if (!existingAlerts || existingAlerts.length === 0) {
+        const { data: patient } = await supabase
+          .from('users')
+          .select('full_name, assigned_doctor_id')
+          .eq('id', patientId)
+          .single();
+
+        await supabase.from('alerts').insert({
           id: `alt-${Date.now()}`,
-          patientId,
-          patientName: patient?.fullName || 'Patient',
-          patientAge: validated.age,
-          gestationalAge: validated.gestationalAge,
-          doctorId: patient?.assignedDoctorId || 'doc-elizabeth-001',
-          assessmentId: assessment.id,
-          riskLevel: predictionResult.riskLevel === 'Very High' ? 'Very High' : 'High',
+          patient_id: patientId,
+          patient_name: patient?.full_name || 'Patient',
+          patient_age: validated.age,
+          gestational_age: validated.gestationalAge,
+          doctor_id: patient?.assigned_doctor_id || 'doc-elizabeth-001',
+          assessment_id: assessment.id,
+          risk_level: predictionResult.riskLevel === 'Very High' ? 'Very High' : 'High',
           probability: predictionResult.highRiskProbability,
-          alertTitle: `${predictionResult.riskLevel} Maternal Risk Flagged (${predictionResult.highRiskProbability.toFixed(1)}%)`,
-          alertMessage: predictionResult.summary,
+          alert_title: `${predictionResult.riskLevel} Maternal Risk Flagged (${predictionResult.highRiskProbability.toFixed(1)}%)`,
+          alert_message: predictionResult.summary,
           status: 'Pending',
-          createdAt: new Date().toISOString(),
+          created_at: new Date().toISOString(),
         });
       }
     }
@@ -83,12 +97,37 @@ router.post('/predict', async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/v1/risk/history/:patientId
-router.get('/history/:patientId', (req: Request, res: Response): void => {
-  const { patientId } = req.params;
-  const history = db.riskAssessments
-    .filter(a => a.patientId === patientId)
-    .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
-  res.status(200).json({ success: true, history });
+router.get('/history/:patientId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { patientId } = req.params;
+    const supabase = db.getSupabase();
+    
+    const { data: history, error } = await supabase
+      .from('risk_assessments')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    
+    const mappedHistory = (history || []).map((h: any) => ({
+       id: h.id,
+       patientId: h.patient_id,
+       riskLevel: h.risk_level,
+       highRiskProbability: h.high_risk_probability,
+       inputData: h.input_data,
+       shapValues: h.shap_values,
+       summary: h.summary,
+       isAlertRequired: h.is_alert_required,
+       createdAt: h.created_at,
+       doctorNotes: h.doctor_notes,
+       scheduledFollowupAt: h.scheduled_followup_at
+    }));
+
+    res.status(200).json({ success: true, history: mappedHistory });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // POST /api/v1/risk/compare

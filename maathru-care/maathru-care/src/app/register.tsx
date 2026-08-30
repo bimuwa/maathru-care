@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import {
   Mail, Lock, User, Phone, ArrowLeft, Calendar, Stethoscope,
@@ -66,6 +68,9 @@ export default function RegisterScreen() {
   const [loadingDoctors, setLoadingDoctors] = useState(false);
 
   const [error, setError] = useState('');
+  // Date picker state for LMP
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [lmpDateObj, setLmpDateObj] = useState<Date>(new Date(Date.now() - 1000 * 60 * 60 * 24 * 7 * 20)); // default ~20wks ago
 
   // Registered user data (used after step 1 completes)
   const [registeredUser, setRegisteredUser] = useState<any>(null);
@@ -326,16 +331,72 @@ export default function RegisterScreen() {
                     ))}
                   </View>
 
-                  <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-5 border border-slate-200">
-                    <Calendar color="#94A3B8" size={18} />
-                    <TextInput
-                      className="flex-1 ml-3 text-slate-800 text-sm"
-                      placeholder="Last Menstrual Period (YYYY-MM-DD)"
-                      placeholderTextColor="#CBD5E1"
-                      value={lmpDate}
-                      onChangeText={setLmpDate}
-                    />
-                  </View>
+                  {/* LMP Date Picker — calendar, not text input */}
+                  <TouchableOpacity
+                    onPress={() => setShowDatePicker(true)}
+                    className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-5 border border-slate-200"
+                    activeOpacity={0.7}
+                  >
+                    <Calendar color={lmpDate ? '#15803D' : '#94A3B8'} size={18} />
+                    <Text className="flex-1 ml-3 text-sm" style={{ color: lmpDate ? '#1E293B' : '#CBD5E1' }}>
+                      {lmpDate ? `Last Menstrual Period: ${lmpDate}` : 'Tap to select Last Menstrual Period'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Native Date Picker */}
+                  {showDatePicker && (
+                    Platform.OS === 'ios' ? (
+                      <Modal transparent animationType="slide">
+                        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 12, textAlign: 'center' }}>
+                              Select Last Menstrual Period
+                            </Text>
+                            <DateTimePicker
+                              value={lmpDateObj}
+                              mode="date"
+                              display="spinner"
+                              maximumDate={new Date()}
+                              minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)}
+                              onChange={(_: any, selected?: Date) => {
+                                if (selected) {
+                                  setLmpDateObj(selected);
+                                  const yyyy = selected.getFullYear();
+                                  const mm = String(selected.getMonth() + 1).padStart(2, '0');
+                                  const dd = String(selected.getDate()).padStart(2, '0');
+                                  setLmpDate(`${yyyy}-${mm}-${dd}`);
+                                }
+                              }}
+                            />
+                            <TouchableOpacity
+                              onPress={() => setShowDatePicker(false)}
+                              style={{ backgroundColor: '#15803D', borderRadius: 14, padding: 14, marginTop: 8 }}
+                            >
+                              <Text style={{ color: '#fff', fontWeight: 'bold', textAlign: 'center' }}>Confirm</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </Modal>
+                    ) : (
+                      <DateTimePicker
+                        value={lmpDateObj}
+                        mode="date"
+                        display="calendar"
+                        maximumDate={new Date()}
+                        minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)}
+                        onChange={(_: any, selected?: Date) => {
+                          setShowDatePicker(false);
+                          if (selected) {
+                            setLmpDateObj(selected);
+                            const yyyy = selected.getFullYear();
+                            const mm = String(selected.getMonth() + 1).padStart(2, '0');
+                            const dd = String(selected.getDate()).padStart(2, '0');
+                            setLmpDate(`${yyyy}-${mm}-${dd}`);
+                          }
+                        }}
+                      />
+                    )
+                  )}
                 </>
               )}
 

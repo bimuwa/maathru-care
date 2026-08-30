@@ -280,8 +280,8 @@ export default function MotherHomeScreen() {
           {[
             { label: 'AI Risk Assessment', sub: '13-vital analysis', icon: <Brain color="#fff" size={22} />, bg: '#15803D', onPress: () => router.push('/(mother)/detect'), dark: true },
             { label: 'Daily Symptoms', sub: 'Log today', icon: <Activity color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/wellness'), dark: false },
-            { label: 'BP & Weight', sub: 'Track vitals', icon: <HeartPulse color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/vitals' as any), dark: false },
-            { label: 'Medications', sub: 'My prescriptions', icon: <Pill color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/medications' as any), dark: false },
+            { label: 'BP & Weight', sub: 'Track vitals', icon: <HeartPulse color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/vitals' as any), dark: false },
+            { label: 'Medications', sub: 'My prescriptions', icon: <Pill color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/medications' as any), dark: false },
             { label: 'Risk Trends', sub: 'History & analysis', icon: <TrendingUp color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/trends'), dark: false },
             { label: 'Chat Doctor', sub: 'Message now', icon: <Bell color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push({ pathname: '/mother-chat', params: { doctorId: user?.assignedDoctorId ?? '', doctorName: user?.assignedDoctorName ?? 'Doctor' } }), dark: false },
           ].map((action, i) => (

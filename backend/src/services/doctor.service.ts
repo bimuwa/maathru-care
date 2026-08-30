@@ -6,6 +6,36 @@ export class DoctorService {
     return db.profiles.filter(p => p.role === 'mother' && (p.assignedDoctorId === doctorId || !p.assignedDoctorId));
   }
 
+  public static getDashboardStats(doctorId: string) {
+    const patients = db.profiles.filter((p: any) => p.assignedDoctorId === doctorId);
+    
+    let highRiskCount = 0;
+    let pendingReviews = 0;
+    let activeAlerts = 0;
+
+    patients.forEach((p: any) => {
+      const pId = p.id;
+      const latestRisk = db.riskAssessments.find((a: any) => a.patientId === pId);
+      const ctgReports = db.ctgReports.filter((c: any) => c.patientId === pId);
+      const symptoms = db.dailySymptoms.filter((s: any) => s.patientId === pId);
+
+      if (latestRisk && (latestRisk.riskLevel === 'High' || latestRisk.riskLevel === 'Very High')) {
+        highRiskCount++;
+      }
+      
+      const unreviewedCtg = ctgReports.filter((c: any) => c.reviewStatus === 'Pending').length;
+      const unreviewedSymptoms = symptoms.filter((s: any) => !s.reviewedByDoctor).length;
+      pendingReviews += (unreviewedCtg + unreviewedSymptoms);
+    });
+
+    return {
+      totalPatients: patients.length,
+      highRiskPatients: highRiskCount,
+      pendingReviews,
+      activeAlerts,
+    };
+  }
+
   public static getPatientDetail(patientId: string) {
     const patient = db.profiles.find(p => p.id === patientId);
     if (!patient) {
@@ -15,7 +45,6 @@ export class DoctorService {
     const assessments = db.riskAssessments.filter(a => a.patientId === patientId);
     const ctgReports = db.ctgReports.filter(c => c.patientId === patientId);
     const symptoms = db.dailySymptoms.filter(s => s.patientId === patientId);
-    const alerts = db.alerts.filter(a => a.patientId === patientId);
 
     return {
       profile: patient,
@@ -23,7 +52,6 @@ export class DoctorService {
       assessments,
       ctgReports,
       symptoms,
-      alerts,
     };
   }
 
@@ -32,7 +60,7 @@ export class DoctorService {
     const assessments = db.riskAssessments.filter(a => a.patientId === patientId);
     const ctgReports = db.ctgReports.filter(c => c.patientId === patientId);
     const symptoms = db.dailySymptoms.filter(s => s.patientId === patientId);
-    const openAlerts = db.alerts.filter(a => a.patientId === patientId && a.status !== 'Closed');
+    const openAlerts = db.alerts.filter((a: any) => a.patientId === patientId && !a.isRead);
 
     const latestAssessment = assessments[0];
     const prevAssessment = assessments[1];
@@ -68,9 +96,9 @@ export class DoctorService {
       riskProbability: latestAssessment?.highRiskProbability || 14.2,
       riskTrajectory: trajectory,
       recentVitals: {
-        bloodPressure: latestAssessment ? `${latestAssessment.factors.find(f => f.feature === 'SystolicBP')?.value || 110}/${latestAssessment.factors.find(f => f.feature === 'DiastolicBP')?.value || 70}` : '110/70',
-        fetalHeartRate: latestAssessment ? +(latestAssessment.factors.find(f => f.feature === 'FetalHeartRate')?.value || 140) : 140,
-        weightKg: latestAssessment ? +(latestAssessment.factors.find(f => f.feature === 'WeightKg')?.value || 60) : 60,
+        bloodPressure: latestAssessment ? `${(latestAssessment.factors as any)?.find((f: any) => f.feature === 'SystolicBP')?.value || 110}/${(latestAssessment.factors as any)?.find((f: any) => f.feature === 'DiastolicBP')?.value || 70}` : '110/70',
+        fetalHeartRate: latestAssessment ? +((latestAssessment.factors as any)?.find((f: any) => f.feature === 'FetalHeartRate')?.value || 140) : 140,
+        weightKg: latestAssessment ? +((latestAssessment.factors as any)?.find((f: any) => f.feature === 'WeightKg')?.value || 60) : 60,
       },
       recentSymptoms: uniqueSymptoms,
       symptomFlags,
@@ -79,7 +107,7 @@ export class DoctorService {
         riskScore: latestCtg.ctgRiskScore,
         baselineFhr: latestCtg.baselineFhr
       } : undefined,
-      openAlertsCount: openAlerts.length,
+      openAlertsCount: 0,
       recommendedClinicalAction: recommendedAction,
       generatedAt: new Date().toISOString()
     };

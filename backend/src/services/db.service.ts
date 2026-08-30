@@ -1,14 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import {
-  PatientProfileDTO,
-  RiskPredictionResponseDTO,
-  CtgReportDTO,
-  DailySymptomDTO,
-  DoctorAlertDTO,
-  ChatMessageDTO,
-} from '../types/index.js';
-
 dotenv.config();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -16,42 +7,26 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 export class DatabaseService {
   private static instance: DatabaseService;
-  private supabase: SupabaseClient | null = null;
+  private supabase: SupabaseClient;
 
-  // Resilient in-memory/local mock store for immediate prototype execution
-  public profiles: PatientProfileDTO[] = [];
-
-  public riskAssessments: RiskPredictionResponseDTO[] = [];
-  public ctgReports: CtgReportDTO[] = [];
-  public dailySymptoms: DailySymptomDTO[] = [];
-  public alerts: DoctorAlertDTO[] = [];
-  public messages: ChatMessageDTO[] = [];
-
-  public vitalsLogs: Array<{
-    id: string; patientId: string; logDate: string;
-    systolicBP: number; diastolicBP: number; weightKg: number;
-    pulseRate?: number; notes?: string; createdAt: string;
-  }> = [];
-
-  public prescriptions: Array<{
-    id: string; patientId: string; doctorId: string; doctorName: string;
-    medications: Array<{ name: string; dosage: string; frequency: string; duration: string; instructions?: string; }>;
-    notes?: string; prescribedAt: string; isActive: boolean;
-  }> = [];
-
-  public doctorStatus: Record<string, { status: string; updatedAt: string; message?: string; }> = {};
+  // Purely a Supabase connection manager now, but we keep mock arrays 
+  // for Member 1's scope (CTG, Symptoms) to avoid breaking their TypeScript code.
+  public profiles: any[] = [];
+  public riskAssessments: any[] = [];
+  public alerts: any[] = [];
+  public messages: any[] = [];
+  public ctgReports: any[] = [];
+  public dailySymptoms: any[] = [];
+  public vitalsLogs: any[] = [];
+  public prescriptions: any[] = [];
+  public doctorStatus: Record<string, any> = {};
 
   private constructor() {
-    if (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('your-project')) {
-      try {
-        this.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-        console.log('[DatabaseService] Connected to Supabase PostgreSQL cloud instance.');
-      } catch (err) {
-        console.warn('[DatabaseService] Could not connect to Supabase, running with local in-memory persistence.');
-      }
-    } else {
-      console.log('[DatabaseService] Running in local/offline prototype mode with seeded mock database.');
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      throw new Error('[DatabaseService] Missing Supabase URL or Key in .env');
     }
+    this.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    console.log('[DatabaseService] Connected to Supabase PostgreSQL cloud instance.');
   }
 
   public static getInstance(): DatabaseService {
@@ -61,7 +36,7 @@ export class DatabaseService {
     return DatabaseService.instance;
   }
 
-  public getSupabase(): SupabaseClient | null {
+  public getSupabase(): SupabaseClient {
     return this.supabase;
   }
 }

@@ -93,6 +93,9 @@ export default function MotherTabLayout() {
           tabBarIcon: ({ color }) => <User color={color} size={22} />,
         }}
       />
+      {/* Hidden screens — not shown in tab bar but within the mother navigation context */}
+      <Tabs.Screen name="vitals" options={{ href: null }} />
+      <Tabs.Screen name="medications" options={{ href: null }} />
     </Tabs>
   );
 }

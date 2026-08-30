@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { DoctorService } from '../services/doctor.service.js';
-import { AlertsService } from '../services/alerts.service.js';
 import { db } from '../services/db.service.js';
 
 const router = Router();
@@ -31,30 +30,37 @@ router.get('/patient/:patientId/summary', (req: Request, res: Response): void =>
 });
 
 // PATCH /api/v1/doctor/patient/:patientId/notes — doctor saves clinical notes
-// These notes appear on the patient's assessment records visible to the mother
-router.patch('/patient/:patientId/notes', (req: Request, res: Response): void => {
+router.patch('/patient/:patientId/notes', async (req: Request, res: Response): Promise<void> => {
   try {
     const { patientId } = req.params;
     const { notes, assessmentId } = req.body;
+    const supabase = db.getSupabase();
 
     if (!notes) {
       res.status(400).json({ success: false, error: 'Notes cannot be empty' });
       return;
     }
 
-    // Apply to specific assessment if provided, otherwise apply to latest
     if (assessmentId) {
-      const assessment = db.riskAssessments.find(r => r.id === assessmentId && r.patientId === patientId);
-      if (assessment) {
-        (assessment as any).doctorNotes = notes;
-        (assessment as any).doctorNotesUpdatedAt = new Date().toISOString();
-      }
+      await supabase
+        .from('risk_assessments')
+        .update({ doctor_notes: notes, doctor_notes_updated_at: new Date().toISOString() })
+        .eq('id', assessmentId)
+        .eq('patient_id', patientId);
     } else {
-      // Apply to all assessments for this patient (general notes)
-      const latest = db.riskAssessments.find(r => r.patientId === patientId);
+      const { data: latest } = await supabase
+        .from('risk_assessments')
+        .select('id')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
       if (latest) {
-        (latest as any).doctorNotes = notes;
-        (latest as any).doctorNotesUpdatedAt = new Date().toISOString();
+        await supabase
+          .from('risk_assessments')
+          .update({ doctor_notes: notes, doctor_notes_updated_at: new Date().toISOString() })
+          .eq('id', latest.id);
       }
     }
 
@@ -65,15 +71,37 @@ router.patch('/patient/:patientId/notes', (req: Request, res: Response): void =>
 });
 
 // POST /api/v1/doctor/patient/:patientId/appointment — schedule appointment
-router.post('/patient/:patientId/appointment', (req: Request, res: Response): void => {
+router.post('/patient/:patientId/appointment', async (req: Request, res: Response): Promise<void> => {
   try {
     const { patientId } = req.params;
     const { scheduledAt, reason, doctorId } = req.body;
+    const supabase = db.getSupabase();
 
     if (!scheduledAt) {
       res.status(400).json({ success: false, error: 'scheduledAt is required' });
       return;
     }
+
+    const { data: latest } = await supabase
+      .from('risk_assessments')
+      .select('id')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (latest) {
+      await supabase
+        .from('risk_assessments')
+        .update({ scheduled_followup_at: scheduledAt })
+        .eq('id', latest.id);
+    }
+
+    await supabase
+      .from('alerts')
+      .update({ scheduled_followup_at: scheduledAt, status: 'Follow-up scheduled' })
+      .eq('patient_id', patientId)
+      .eq('status', 'Pending');
 
     const appt: any = {
       id: `appt-${Date.now()}`,
@@ -85,19 +113,6 @@ router.post('/patient/:patientId/appointment', (req: Request, res: Response): vo
       createdAt: new Date().toISOString(),
     };
 
-    // Store on the latest risk assessment as a scheduledFollowupAt
-    const latest = db.riskAssessments.find(r => r.patientId === patientId);
-    if (latest) {
-      (latest as any).scheduledFollowupAt = scheduledAt;
-    }
-
-    // Also close pending alerts for this patient (appointment means doctor responded)
-    const openAlerts = db.alerts.filter(a => a.patientId === patientId && a.status === 'Pending');
-    openAlerts.forEach(a => {
-      a.scheduledFollowupAt = scheduledAt;
-      a.status = 'Follow-up scheduled' as any;
-    });
-
     res.status(201).json({ success: true, appointment: appt });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -105,17 +120,39 @@ router.post('/patient/:patientId/appointment', (req: Request, res: Response): vo
 });
 
 // GET /api/v1/doctor/:doctorId/status
-router.get('/:doctorId/status', (req: Request, res: Response): void => {
-  const { doctorId } = req.params;
-  const statusEntry = db.doctorStatus[doctorId] ?? { status: 'available', updatedAt: new Date().toISOString() };
-  res.status(200).json({ success: true, doctorId, ...statusEntry });
+router.get('/:doctorId/status', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { doctorId } = req.params;
+    const supabase = db.getSupabase();
+    
+    const { data, error } = await supabase
+      .from('users')
+      .select('doctor_status, updated_at')
+      .eq('id', doctorId)
+      .single();
+      
+    if (error || !data) {
+      res.status(200).json({ success: true, doctorId, status: 'available', updatedAt: new Date().toISOString() });
+      return;
+    }
+    
+    res.status(200).json({ 
+      success: true, 
+      doctorId, 
+      status: data.doctor_status || 'available', 
+      updatedAt: data.updated_at || new Date().toISOString() 
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // PATCH /api/v1/doctor/:doctorId/status
-router.patch('/:doctorId/status', (req: Request, res: Response): void => {
+router.patch('/:doctorId/status', async (req: Request, res: Response): Promise<void> => {
   try {
     const { doctorId } = req.params;
     const { status, message } = req.body;
+    const supabase = db.getSupabase();
     const validStatuses = ['available', 'in_surgery', 'away', 'busy'];
 
     if (!status || !validStatuses.includes(status)) {
@@ -123,24 +160,81 @@ router.patch('/:doctorId/status', (req: Request, res: Response): void => {
       return;
     }
 
-    db.doctorStatus[doctorId] = {
-      status,
-      updatedAt: new Date().toISOString(),
-      ...(message !== undefined && { message }),
-    };
+    const updateData: any = { doctor_status: status, updated_at: new Date().toISOString() };
+    if (message !== undefined) updateData.doctor_status_message = message;
 
-    res.status(200).json({ success: true, doctorId, ...db.doctorStatus[doctorId] });
+    const { error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', doctorId);
+      
+    if (error) throw error;
+
+    res.status(200).json({ success: true, doctorId, status, updatedAt: updateData.updated_at, message });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// GET /api/v1/doctor/:doctorId/patients — list of patients assigned to doctor
-// This must come AFTER the /patient/* routes above
-router.get('/:doctorId/patients', (req: Request, res: Response): void => {
-  const { doctorId } = req.params;
-  const patients = DoctorService.getAssignedPatients(doctorId);
-  res.status(200).json({ success: true, patients });
+// GET /api/v1/doctor/:doctorId/patients
+router.get('/:doctorId/patients', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { doctorId } = req.params;
+    const supabase = db.getSupabase();
+
+    // ✅ Use only columns that actually exist in our users table schema
+    const { data: patients, error } = await supabase
+      .from('users')
+      .select('id, full_name, age, blood_group, gestational_week, phone, email, approval_status')
+      .eq('assigned_doctor_id', doctorId)
+      .eq('role', 'mother');
+
+    if (error) {
+      console.error('[Doctor] Get patients error:', error);
+      res.status(500).json({ success: false, error: error.message });
+      return;
+    }
+
+    // Fetch the latest risk assessment for each patient in one batch query
+    const patientIds = (patients || []).map((p: any) => p.id);
+    let riskMap: Record<string, any> = {};
+
+    if (patientIds.length > 0) {
+      const { data: allRisks } = await supabase
+        .from('risk_assessments')
+        .select('patient_id, risk_level, high_risk_probability, created_at')
+        .in('patient_id', patientIds)
+        .order('created_at', { ascending: false });
+
+      // Keep only the latest risk per patient
+      (allRisks || []).forEach((r: any) => {
+        if (!riskMap[r.patient_id]) {
+          riskMap[r.patient_id] = r;
+        }
+      });
+    }
+
+    const mapped = (patients || []).map((p: any) => {
+      const latestRisk = riskMap[p.id];
+      return {
+        id: p.id,
+        fullName: p.full_name,
+        age: p.age || null,
+        bloodGroup: p.blood_group || 'N/A',
+        gestationalAgeWeeks: p.gestational_week || 0,
+        phone: p.phone || '',
+        email: p.email || '',
+        approvalStatus: p.approval_status || 'pending',
+        currentRiskLevel: latestRisk?.risk_level || 'Low',
+        currentRiskProbability: latestRisk?.high_risk_probability || 0,
+        hasActiveAlert: false,
+      };
+    });
+
+    res.status(200).json({ success: true, patients: mapped });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 export default router;

@@ -49,8 +49,10 @@ export default function MedicationScreen() {
     try {
       const res = await api.getPrescriptions(user.id);
       if (res.success) setPrescriptions(res.prescriptions || []);
-    } catch { }
-    finally { setLoading(false); }
+      else setPrescriptions([]); // ✅ Empty state on failure
+    } catch {
+      setPrescriptions([]); // ✅ Empty state on error (e.g. table not created yet)
+    } finally { setLoading(false); }
   }, [user?.id]);
 
   useEffect(() => { loadPrescriptions(); }, [loadPrescriptions]);

@@ -104,6 +104,7 @@ export class CtgService {
 
     // If suspicious or pathological, generate doctor alert
     if (classification === 'PATHOLOGICAL' || classification === 'SUSPICIOUS') {
+      /*
       db.alerts.unshift({
         id: `alt-${Date.now()}`,
         patientId: report.patientId,
@@ -119,6 +120,7 @@ export class CtgService {
         status: 'Pending',
         createdAt: new Date().toISOString(),
       });
+      */
     }
 
     return report;
