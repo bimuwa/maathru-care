@@ -1,0 +1,8 @@
+{"_e":"root:init","_t":1788093195624,"format":"v0-jsonl","version":"57.0.20"}
+{"_e":"env:mode","_t":1788093195625,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1788093195627,"mode":"development","files":["../..\\..\\.env"],"env":{"AI_SERVICE_URL":"http://127.0.0.1:8000","PORT":"5000","SUPABASE_SERVICE_ROLE_KEY":"your-supabase-key","SUPABASE_URL":"https://your-project.supabase.co"}}
+{"_e":"devserver:start","_t":1788093195816,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1788093196105,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1788093196306,"plugins":[]}
+{"_e":"metro:instantiate","_t":1788093199853,"atlas":false,"workers":17,"host":"::","port":8081}
+{"_e":"env:mode","_t":1788093205887,"nodeEnv":"development","babelEnv":"development","mode":"development"}

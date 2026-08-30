@@ -1,0 +1,11 @@
+MEMBER_2_ADDITIONAL_FUNCTIONS_CODEX_NOTE.txt
+MEMBER_2_ONLY_SPECIFICATION.md
+MEMBER_2_TODO.md
+
+# Common ignores
+.venv/
+.idea/
+node_modules/
+__pycache__/
+*.pyc
+.env
