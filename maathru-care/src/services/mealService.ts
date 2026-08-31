@@ -68,13 +68,15 @@ export const mealService = {
       { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 }
     );
 
+    const localDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
     // 1. Insert Meal Log
     const { data: logData, error: logError } = await supabase
       .from('meal_logs')
       .insert({
         user_id: userId,
         meal_type: mealType,
-        logged_date: date.toISOString().split('T')[0],
+        logged_date: localDateStr,
         total_carbs_g: totals.carbs,
         total_sugar_g: totals.sugar,
         total_fiber_g: totals.fiber,
@@ -122,6 +124,7 @@ export const mealService = {
   },
 
   async getDailyNutrition(userId: string, date: Date) {
+    const localDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const { data, error } = await supabase
       .from('meal_logs')
       .select(`
@@ -129,7 +132,7 @@ export const mealService = {
         meal_items (*)
       `)
       .eq('user_id', userId)
-      .eq('logged_date', date.toISOString().split('T')[0]);
+      .eq('logged_date', localDateStr);
 
     if (error) {
       console.error('Error fetching daily nutrition:', error);
@@ -143,12 +146,15 @@ export const mealService = {
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(today.getDate() - 6);
 
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const sevenDaysAgoStr = `${sevenDaysAgo.getFullYear()}-${String(sevenDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(sevenDaysAgo.getDate()).padStart(2, '0')}`;
+
     const { data, error } = await supabase
       .from('meal_logs')
       .select('*')
       .eq('user_id', userId)
-      .gte('logged_date', sevenDaysAgo.toISOString().split('T')[0])
-      .lte('logged_date', today.toISOString().split('T')[0])
+      .gte('logged_date', sevenDaysAgoStr)
+      .lte('logged_date', todayStr)
       .order('logged_date', { ascending: true });
 
     if (error) {
@@ -166,11 +172,12 @@ export const mealService = {
     carbs: number; sugar: number; fiber: number; fat: number; iron: number; calcium: number;
   }> {
     const today = new Date();
+    const localDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const { data, error } = await supabase
       .from('meal_logs')
       .select('total_carbs_g, total_sugar_g, total_fiber_g, total_fat_g, total_iron_mg, total_calcium_mg')
       .eq('user_id', userId)
-      .eq('logged_date', today.toISOString().split('T')[0]);
+      .eq('logged_date', localDateStr);
 
     if (error || !data) {
       return { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 };

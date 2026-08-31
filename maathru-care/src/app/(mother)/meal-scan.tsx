@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
   Animated,
   Modal,
+  TextInput,
+  FlatList,
 } from 'react-native';
-import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock } from 'lucide-react-native';
+import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock, Search, Utensils, ArrowLeft } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -28,16 +30,19 @@ import { MealSaveSuccessModal } from '@/components/ui/MealSaveSuccessModal';
 import { GDMFoodWarningModal, FoodWarning } from '@/components/ui/GDMFoodWarningModal';
 
 // API & Services
+import { supabase } from '@/lib/supabase';
 import { analyzeMealImage, Detection } from '@/services/api/foodDetector';
+import { useAuth } from '@/context/AuthContext';
 import { mealService } from '@/services/mealService';
 import { gdmCacheService } from '@/services/gdmCacheService';
 import { ScanState, MealItem } from '@/types/meal';
-import { ACTIVE_USER_ID } from '@/constants/userConfig';
 import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
 import { GDMRiskResponse } from '@/types/gdm';
 
 export default function DetectScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const userId = user?.id || '';
 
   // ── GDM Lock State ──────────────────────────────────────
   const [hasGdmRisk, setHasGdmRisk] = useState<boolean | null>(null);
@@ -46,7 +51,7 @@ export default function DetectScreen() {
     useCallback(() => {
       let isActive = true;
       const checkRisk = async () => {
-        const riskCat = await gdmCacheService.getRiskCategory(ACTIVE_USER_ID);
+        const riskCat = await gdmCacheService.getRiskCategory(userId);
         if (isActive) {
           setHasGdmRisk(!!riskCat);
         }
@@ -89,6 +94,122 @@ export default function DetectScreen() {
   const [gdmRiskCategory, setGdmRiskCategory] = useState<GDMRiskResponse['riskCategory'] | null>(null);
   const [pendingMealItems, setPendingMealItems] = useState<MealItem[]>([]);
   const [pendingFoodNames, setPendingFoodNames] = useState<string[]>([]);
+
+  // ── Manual Search State ─────────────────────────────────────
+  const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Debounced Search Effect
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('maternal_foods')
+          .select('*')
+          .ilike('display_name', `%${searchQuery.trim()}%`)
+          .limit(20);
+
+        if (!error && data) {
+          setSearchResults(data);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  const handleSelectManualFood = (food: any) => {
+    setIsSearchModalVisible(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    
+    // Map DB row to MealItem (assuming 1 default serving)
+    const newMealItem: MealItem = {
+      id: `${food.food_id}-${Date.now()}`,
+      foodId: food.food_id,
+      name: food.display_name || food.food_id,
+      servingMultiplier: 1,
+      imageUri: null, // No image since it's manual
+      carbsG: food.carbs_g || 0,
+      sugarG: food.sugar_g || 0,
+      fiberG: food.fiber_g || 0,
+      fatG: food.fat_g || 0,
+      proteinG: food.protein_g || 0,
+      ironMg: food.iron_mg || 0,
+      calciumMg: food.calcium_mg || 0,
+      gi_category: food.gi_category || 'Low',
+    };
+
+    // Proceed to warning check directly
+    checkWarningsAndCommit([newMealItem]);
+  };
+
+  // Separated Warning Logic so both Scanner and Manual Search can use it
+  const checkWarningsAndCommit = async (fetchedItems: MealItem[]) => {
+    if (fetchedItems.length === 0) return;
+
+    try {
+      const [riskCat, todayTotals] = await Promise.all([
+        gdmCacheService.getRiskCategory(userId),
+        mealService.getTodayTotals(userId),
+      ]);
+
+      const newSugar = fetchedItems.reduce((s, i) => s + i.sugarG * i.servingMultiplier, 0);
+      const newCarbs = fetchedItems.reduce((s, i) => s + i.carbsG * i.servingMultiplier, 0);
+      const newFat = fetchedItems.reduce((s, i) => s + i.fatG * i.servingMultiplier, 0);
+
+      const warnings: FoodWarning[] = [];
+      const sugarLimit = riskCat === 'High Risk' ? 20 : PREGNANCY_NUTRITION_TARGETS.sugarG;
+
+      if (riskCat === 'High Risk') {
+        if (newSugar > 8) warnings.push({ severity: 'high', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). High Risk GDM should keep per-meal sugar very low.` });
+        if (newCarbs > 50) warnings.push({ severity: 'high', message: `🍞 Carbs: Adds ${newCarbs.toFixed(1)}g (Today's total: ${(todayTotals.carbs + newCarbs).toFixed(1)}g). This is high for a single meal.` });
+      } else if (riskCat === 'Moderate Risk') {
+        if (newSugar > 12) warnings.push({ severity: 'medium', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). Consider smaller portions.` });
+      } else if (!riskCat) {
+        if (newSugar > 10) warnings.push({ severity: 'medium', message: `🍬 Sugar: This adds ${newSugar.toFixed(1)}g. (Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g). Is this safe for you?` });
+        if (newCarbs > 60) warnings.push({ severity: 'medium', message: `🍞 Carbs: This adds ${newCarbs.toFixed(1)}g. (Total will be ${(todayTotals.carbs + newCarbs).toFixed(1)}g).` });
+      }
+
+      if (todayTotals.sugar + newSugar > sugarLimit) {
+        if (!warnings.some(w => w.message.includes('Sugar Limit'))) warnings.push({ severity: riskCat === 'High Risk' ? 'high' : 'medium', message: `⚠️ Daily Sugar Limit: Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g, exceeding your ${sugarLimit}g limit.` });
+      }
+
+      if (todayTotals.carbs + newCarbs > 200) {
+        if (!warnings.some(w => w.message.includes('Carbs'))) warnings.push({ severity: 'medium', message: `🍞 Carbs: Total will reach ${(todayTotals.carbs + newCarbs).toFixed(1)}g today. Consider a lighter option.` });
+      }
+
+      if (newFat > 20) {
+        warnings.push({ severity: 'info', message: `🥑 Fat: This food adds ${newFat.toFixed(1)}g of fat. Choose lean options where possible.` });
+      }
+
+      if (warnings.length > 0) {
+        setPendingMealItems(fetchedItems);
+        setPendingFoodNames(fetchedItems.map((i) => i.name.replace(/_/g, ' ')));
+        setGdmWarnings(warnings);
+        setGdmRiskCategory(riskCat);
+        setShowGdmWarning(true);
+        return;
+      }
+    } catch {
+      // Proceed silently on error
+    }
+
+    commitPendingItems(fetchedItems);
+  };
 
   // ── Save button animation ───────────────────────────────────
   const saveBtnScale = useRef(new Animated.Value(1)).current;
@@ -189,14 +310,16 @@ export default function DetectScreen() {
 
   const handleCamera = async () => {
     try {
+      // Lower quality to prevent Android from killing the app due to memory constraints
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
-        quality: 1,
+        quality: 0.6,
       });
       if (!result.canceled && result.assets[0]) {
         processImage(result.assets[0].uri);
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       Alert.alert('Camera Error', 'Could not open the camera.');
     }
   };
@@ -204,14 +327,15 @@ export default function DetectScreen() {
   const handleGallery = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 1,
+        quality: 0.8,
       });
       if (!result.canceled && result.assets[0]) {
         processImage(result.assets[0].uri);
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       Alert.alert('Gallery Error', 'Could not open the photo gallery.');
     }
   };
@@ -303,70 +427,8 @@ export default function DetectScreen() {
 
     if (fetchedItems.length === 0) return;
 
-    // ── GDM & Nutrition Warning Check ─────────────────────────────────
-    try {
-      const [riskCat, todayTotals] = await Promise.all([
-        gdmCacheService.getRiskCategory(ACTIVE_USER_ID),
-        mealService.getTodayTotals(ACTIVE_USER_ID),
-      ]);
-
-      // Totals from the new food (all items combined)
-      const newSugar = fetchedItems.reduce((s, i) => s + i.sugarG * i.servingMultiplier, 0);
-      const newCarbs = fetchedItems.reduce((s, i) => s + i.carbsG * i.servingMultiplier, 0);
-      const newFat = fetchedItems.reduce((s, i) => s + i.fatG * i.servingMultiplier, 0);
-
-      const warnings: FoodWarning[] = [];
-      const sugarLimit = riskCat === 'High Risk' ? 20 : PREGNANCY_NUTRITION_TARGETS.sugarG;
-
-      // Risk specific warnings
-      if (riskCat === 'High Risk') {
-        if (newSugar > 8)
-          warnings.push({ severity: 'high', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). High Risk GDM should keep per-meal sugar very low.` });
-        if (newCarbs > 50)
-          warnings.push({ severity: 'high', message: `🍞 Carbs: Adds ${newCarbs.toFixed(1)}g (Today's total: ${(todayTotals.carbs + newCarbs).toFixed(1)}g). This is high for a single meal.` });
-      } else if (riskCat === 'Moderate Risk') {
-        if (newSugar > 12)
-          warnings.push({ severity: 'medium', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). Consider smaller portions.` });
-      } else if (!riskCat) {
-        // Unknown risk: flag if it's generally high
-        if (newSugar > 10)
-          warnings.push({ severity: 'medium', message: `🍬 Sugar: This adds ${newSugar.toFixed(1)}g. (Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g). Is this safe for you?` });
-        if (newCarbs > 60)
-          warnings.push({ severity: 'medium', message: `🍞 Carbs: This adds ${newCarbs.toFixed(1)}g. (Total will be ${(todayTotals.carbs + newCarbs).toFixed(1)}g).` });
-      }
-
-      // Daily totals warnings
-      if (todayTotals.sugar + newSugar > sugarLimit) {
-        if (!warnings.some(w => w.message.includes('Sugar Limit'))) {
-          warnings.push({ severity: riskCat === 'High Risk' ? 'high' : 'medium', message: `⚠️ Daily Sugar Limit: Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g, exceeding your ${sugarLimit}g limit.` });
-        }
-      }
-
-      if (todayTotals.carbs + newCarbs > 200) {
-        if (!warnings.some(w => w.message.includes('Carbs'))) {
-          warnings.push({ severity: 'medium', message: `🍞 Carbs: Total will reach ${(todayTotals.carbs + newCarbs).toFixed(1)}g today. Consider a lighter option.` });
-        }
-      }
-
-      if (newFat > 20) {
-        warnings.push({ severity: 'info', message: `🥑 Fat: This food adds ${newFat.toFixed(1)}g of fat. Choose lean options where possible.` });
-      }
-
-      if (warnings.length > 0) {
-        // Show warning modal
-        setPendingMealItems(fetchedItems);
-        setPendingFoodNames(fetchedItems.map((i) => i.name.replace(/_/g, ' ')));
-        setGdmWarnings(warnings);
-        setGdmRiskCategory(riskCat);
-        setShowGdmWarning(true);
-        return;
-      }
-    } catch {
-      // If warning check fails, proceed without warning
-    }
-
-    // No warnings — add directly
-    commitPendingItems(fetchedItems);
+    // Use shared warning checker
+    checkWarningsAndCommit(fetchedItems);
   };
 
   const handleRemoveMealItem = (idToRemove: string) => {
@@ -385,7 +447,7 @@ export default function DetectScreen() {
 
     setIsSaving(true);
     try {
-      await mealService.saveMealSession(ACTIVE_USER_ID, mealType, selectedDate, mealItems);
+      await mealService.saveMealSession(userId, mealType, selectedDate, mealItems);
 
       // Show custom elegant modal instead of generic OS alert
       setShowSuccessModal(true);
@@ -406,6 +468,7 @@ export default function DetectScreen() {
           <ScanActionButtons
             onCamera={handleCamera}
             onGallery={handleGallery}
+            onSearch={() => setIsSearchModalVisible(true)}
             hasItems={mealItems.length > 0}
           />
         </View>
@@ -834,7 +897,7 @@ export default function DetectScreen() {
           setShowSuccessModal(false);
           setMealItems([]);
           resetScanWorkspace();
-          router.push('/wellness');
+          router.push('/(mother)/gdm-care');
         }}
         onScanMore={() => {
           setShowSuccessModal(false);
@@ -864,7 +927,7 @@ export default function DetectScreen() {
           setPendingMealItems([]);
           setPendingFoodNames([]);
           setGdmWarnings([]);
-          router.push('/wellness?tab=gdm');
+          router.push('/(mother)/gdm-care?tab=gdm');
         }}
       />
 
@@ -883,7 +946,7 @@ export default function DetectScreen() {
             </Text>
             <TouchableOpacity
               style={{ backgroundColor: '#047857', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 16, width: '100%', alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
-              onPress={() => router.push('/wellness?tab=gdm')}
+              onPress={() => router.push('/(mother)/gdm-care?tab=gdm')}
               activeOpacity={0.8}
             >
               <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginRight: 8 }}>Check GDM Risk Now</Text>
@@ -892,6 +955,90 @@ export default function DetectScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── Search Food Modal ────────────────────────────────────────────── */}
+      <Modal visible={isSearchModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setIsSearchModalVisible(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+            <TouchableOpacity onPress={() => setIsSearchModalVisible(false)} style={{ padding: 8, marginRight: 8, backgroundColor: '#F1F5F9', borderRadius: 20 }}>
+              <ArrowLeft size={24} color="#334155" />
+            </TouchableOpacity>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 12, paddingHorizontal: 12 }}>
+              <Search size={20} color="#94A3B8" />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search maternal foods..."
+                placeholderTextColor="#94A3B8"
+                autoFocus
+                style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 16, color: '#0F172A' }}
+              />
+            </View>
+          </View>
+
+          {/* Results */}
+          {isSearching ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" color="#059669" />
+              <Text style={{ marginTop: 12, color: '#64748B', fontSize: 15 }}>Searching database...</Text>
+            </View>
+          ) : searchResults.length > 0 ? (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.food_id}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => handleSelectManualFood(item)}
+                  activeOpacity={0.7}
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 16,
+                    padding: 16,
+                    marginBottom: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: '#E2E8F0',
+                  }}
+                >
+                  <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#F5F3FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                    <Utensils size={24} color="#8B5CF6" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 4 }}>
+                      {item.display_name}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#64748B' }}>
+                      {item.carbs_g}g Carbs • {item.sugar_g}g Sugar
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color="#CBD5E1" />
+                </TouchableOpacity>
+              )}
+            />
+          ) : searchQuery.trim().length > 1 ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+              <Text style={{ fontSize: 40, marginBottom: 12 }}>🔍</Text>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#1E293B', textAlign: 'center', marginBottom: 8 }}>
+                No foods found
+              </Text>
+              <Text style={{ fontSize: 15, color: '#64748B', textAlign: 'center' }}>
+                We couldn't find any foods matching "{searchQuery}". Try a different term.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+              <Utensils size={48} color="#E2E8F0" style={{ marginBottom: 16 }} />
+              <Text style={{ fontSize: 16, color: '#94A3B8', textAlign: 'center' }}>
+                Search our database for healthy maternal foods to add to your plate.
+              </Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
+
     </View>
   );
 }

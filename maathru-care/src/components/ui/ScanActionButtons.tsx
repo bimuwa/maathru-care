@@ -1,10 +1,11 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Animated } from 'react-native';
-import { Camera, Image as ImageIcon, Plus, ScanLine } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Plus, ScanLine, Search } from 'lucide-react-native';
 
 interface ScanActionButtonsProps {
   onCamera: () => void;
   onGallery: () => void;
+  onSearch: () => void;
   hasItems: boolean;
 }
 
@@ -48,7 +49,7 @@ function PulseButton({
   );
 }
 
-export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionButtonsProps) {
+export function ScanActionButtons({ onCamera, onGallery, onSearch, hasItems }: ScanActionButtonsProps) {
   return (
     <View style={{ paddingHorizontal: 16 }}>
       {/* Section title */}
@@ -152,6 +153,7 @@ export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionB
         style={{
           borderRadius: 20,
           padding: 20,
+          marginBottom: 12,
           backgroundColor: '#FFFFFF',
           flexDirection: 'row',
           alignItems: 'center',
@@ -185,6 +187,52 @@ export function ScanActionButtons({ onCamera, onGallery, hasItems }: ScanActionB
           </Text>
           <Text style={{ fontSize: 13, color: '#94A3B8' }}>
             Choose an existing photo from your phone
+          </Text>
+        </View>
+
+        <Text style={{ fontSize: 20, color: '#CBD5E1' }}>→</Text>
+      </TouchableOpacity>
+
+      {/* Search Button — Tertiary */}
+      <TouchableOpacity
+        onPress={onSearch}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 20,
+          padding: 20,
+          backgroundColor: '#FFFFFF',
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1.5,
+          borderColor: '#E2E8F0',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
+          elevation: 2,
+        }}
+      >
+        {/* Icon circle */}
+        <View
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: '#F5F3FF',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 16,
+          }}
+        >
+          <Search size={24} color="#8B5CF6" strokeWidth={1.8} />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: 'serif', fontSize: 18, fontWeight: '600', color: '#1E293B', marginBottom: 3 }}>
+            Search Food manually
+          </Text>
+          <Text style={{ fontSize: 13, color: '#94A3B8' }}>
+            Search from our database directly
           </Text>
         </View>
 

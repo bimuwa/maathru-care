@@ -17,7 +17,7 @@ import { mealService } from '@/services/mealService';
 import { gdmRiskService } from '@/services/gdmRiskService';
 import { gdmCacheService, GDMCacheEntry } from '@/services/gdmCacheService';
 import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
-import { ACTIVE_USER_ID } from '@/constants/userConfig';
+import { useAuth } from '@/context/AuthContext';
 import { GDMRiskResponse } from '@/types/gdm';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -230,6 +230,8 @@ const SimpleBarChart = ({ data, color }: { data: number[], color: string }) => {
 export default function WellnessScreen() {
   const router = useRouter();
   const { tab } = useLocalSearchParams<{ tab?: string }>();
+  const { user } = useAuth();
+  const userId = user?.id || '';
 
   const [activeTab, setActiveTab] = useState<Tab>('daily');
   const [maternalProfile, setMaternalProfile] = useState<any>(null);
@@ -242,7 +244,7 @@ export default function WellnessScreen() {
   // Load Profile globally for Header
   useEffect(() => {
     const loadProfile = async () => {
-      const profile = await gdmRiskService.getMaternalProfile(ACTIVE_USER_ID);
+      const profile = await gdmRiskService.getMaternalProfile(userId);
       setMaternalProfile(profile);
     };
     loadProfile();
@@ -303,7 +305,7 @@ export default function WellnessScreen() {
     
     setIsLoadingDailyMap(prev => ({ ...prev, [dateIso]: true }));
     try {
-      const data = await mealService.getDailyNutrition(ACTIVE_USER_ID, new Date(dateIso));
+      const data = await mealService.getDailyNutrition(userId, new Date(dateIso));
       setDailyDataMap(prev => ({ ...prev, [dateIso]: data }));
     } catch { }
     setIsLoadingDailyMap(prev => ({ ...prev, [dateIso]: false }));
@@ -312,14 +314,14 @@ export default function WellnessScreen() {
   const loadWeekly = async () => {
     setIsLoadingWeekly(true);
     try {
-      const data = await mealService.getWeeklyTrends(ACTIVE_USER_ID);
+      const data = await mealService.getWeeklyTrends(userId);
       setWeeklyData(data);
     } catch { }
     setIsLoadingWeekly(false);
   };
 
   const loadGdmCache = useCallback(async () => {
-    const { entry, isExpired, daysUntilNextCheck } = await gdmCacheService.load(ACTIVE_USER_ID);
+    const { entry, isExpired, daysUntilNextCheck } = await gdmCacheService.load(userId);
     setGdmCache(entry);
     setGdmExpired(isExpired);
     setDaysUntilNext(daysUntilNextCheck);
@@ -329,14 +331,14 @@ export default function WellnessScreen() {
     setIsCheckingGdm(true);
     setGdmError(null);
     try {
-      const profile = await gdmRiskService.getMaternalProfile(ACTIVE_USER_ID);
+      const profile = await gdmRiskService.getMaternalProfile(userId);
       if (!profile) {
         setGdmError('Could not load your maternal health profile. Please complete your profile first.');
         return;
       }
       const result = await gdmRiskService.assessRisk(profile);
       const gestationalWeek = profile.gestational_week || 24;
-      const entry = await gdmCacheService.save(ACTIVE_USER_ID, result, gestationalWeek);
+      const entry = await gdmCacheService.save(userId, result, gestationalWeek);
       setGdmCache(entry);
       setGdmExpired(false);
       setDaysUntilNext(
