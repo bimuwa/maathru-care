@@ -1,9 +1,27 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Home, HeartPulse, ScanLine, TrendingUp, User, Activity } from 'lucide-react-native';
-import { View } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import React from 'react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function MotherTabLayout() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+        <ActivityIndicator size="large" color="#15803D" />
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect href="/login" />;
+  }
+
+  if (user?.role === 'doctor') {
+    return <Redirect href="/(doctor)/home" />;
+  }
   return (
     <Tabs
       screenOptions={{

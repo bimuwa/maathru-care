@@ -12,7 +12,7 @@ import {
   TextInput,
   FlatList,
 } from 'react-native';
-import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock, Search, Utensils, ArrowLeft } from 'lucide-react-native';
+import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock, Search, Utensils, ArrowLeft, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -46,9 +46,12 @@ export default function DetectScreen() {
 
   // ── GDM Lock State ──────────────────────────────────────
   const [hasGdmRisk, setHasGdmRisk] = useState<boolean | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const [dismissGdmLock, setDismissGdmLock] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
+      setIsFocused(true);
       let isActive = true;
       const checkRisk = async () => {
         const riskCat = await gdmCacheService.getRiskCategory(userId);
@@ -57,8 +60,11 @@ export default function DetectScreen() {
         }
       };
       checkRisk();
-      return () => { isActive = false; };
-    }, [])
+      return () => {
+        isActive = false;
+        setIsFocused(false);
+      };
+    }, [userId])
   );
 
   const { date } = useLocalSearchParams<{ date?: string }>();
@@ -932,9 +938,23 @@ export default function DetectScreen() {
       />
 
       {/* ── GDM Lock Modal (Blocks interaction if GDM is unchecked) ── */}
-      <Modal visible={hasGdmRisk === false} transparent animationType="fade" statusBarTranslucent>
+      <Modal
+        visible={isFocused && !dismissGdmLock && hasGdmRisk === false}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setDismissGdmLock(true)}
+      >
         <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', padding: 24 }}>
-          <View style={{ alignItems: 'center', backgroundColor: '#FFFFFF', padding: 32, borderRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 4 }}>
+          <View style={{ alignItems: 'center', backgroundColor: '#FFFFFF', padding: 32, borderRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 4, position: 'relative' }}>
+            <TouchableOpacity
+              onPress={() => setDismissGdmLock(true)}
+              style={{ position: 'absolute', top: 16, right: 16, padding: 8, borderRadius: 20, backgroundColor: '#F1F5F9' }}
+              activeOpacity={0.7}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
             <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
               <Lock size={40} color="#047857" />
             </View>
@@ -946,7 +966,10 @@ export default function DetectScreen() {
             </Text>
             <TouchableOpacity
               style={{ backgroundColor: '#047857', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 16, width: '100%', alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
-              onPress={() => router.push('/(mother)/gdm-care?tab=gdm')}
+              onPress={() => {
+                setDismissGdmLock(true);
+                router.push('/(mother)/gdm-care?tab=gdm');
+              }}
               activeOpacity={0.8}
             >
               <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginRight: 8 }}>Check GDM Risk Now</Text>
