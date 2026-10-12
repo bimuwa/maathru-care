@@ -13,6 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { DatePickerModal } from '../components/ui/DatePickerModal';
 import { useRouter } from 'expo-router';
 import {
   Mail, Lock, User, Phone, ArrowLeft, Calendar, Stethoscope,
@@ -371,9 +372,25 @@ export default function RegisterScreen() {
                     </Text>
                   </TouchableOpacity>
 
-                  {/* Native Date Picker */}
+                  {/* Date Picker (Web custom modal, iOS modal with spinner, Android native dialog) */}
                   {showDatePicker && (
-                    Platform.OS === 'ios' ? (
+                    Platform.OS === 'web' ? (
+                      <DatePickerModal
+                        visible={showDatePicker}
+                        value={lmpDateObj}
+                        maximumDate={new Date()}
+                        minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)}
+                        onConfirm={(selected: Date) => {
+                          setLmpDateObj(selected);
+                          const yyyy = selected.getFullYear();
+                          const mm = String(selected.getMonth() + 1).padStart(2, '0');
+                          const dd = String(selected.getDate()).padStart(2, '0');
+                          setLmpDate(`${yyyy}-${mm}-${dd}`);
+                          setShowDatePicker(false);
+                        }}
+                        onCancel={() => setShowDatePicker(false)}
+                      />
+                    ) : Platform.OS === 'ios' ? (
                       <Modal transparent animationType="slide">
                         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
                           <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "maathru-care",
-    "slug": "maathru-care",
+    "slug": "tharindunuwantha",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/maathru-care-logo.jpg",
@@ -15,7 +15,8 @@
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/maathru-care-logo.jpg"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.tharindunuwantha2steam.tharindunuwantha"
     },
     "web": {
       "output": "static",
@@ -34,6 +35,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "508941b5-f6e2-4af0-8e37-344f2fbd0484"
+      }
+    },
+    "owner": "tharindunuwantha2s-team"
   }
 }
