@@ -1,0 +1,116 @@
+# MaternaLink — backend + fer + sentiment + fusion + postgres.
+#
+# All configuration comes from an untracked .env (see .env.example). No
+# secret and no fusion parameter VALUE appears in this file — the fusion
+# parameters are injected at container start from .env (§7A.7); this file
+# only names the environment variable keys, never a literal value.
+
+services:
+  backend:
+    build:
+      context: ./dev/backend
+      dockerfile: Dockerfile
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      fer:
+        condition: service_healthy
+      sentiment:
+        condition: service_healthy
+      fusion:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  fer:
+    build:
+      context: .
+      dockerfile: docker/fer.Dockerfile
+    environment:
+      FER_DEBUG: ${FER_DEBUG:-0}
+    ports:
+      - "7860:7860"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # FER inference is sub-millisecond (MEASURED, nb07) but interpreter +
+      # dependency load is unmeasured; a short grace is a reasonable estimate.
+      start_period: 20s
+
+  sentiment:
+    build:
+      context: .
+      dockerfile: docker/sentiment.Dockerfile
+    environment:
+      SENTIMENT_DEBUG: ${SENTIMENT_DEBUG:-0}
+    ports:
+      # Host 8000 may be occupied by unrelated local projects; container port
+      # is unaffected — cross-container calls use http://sentiment:8000.
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # PROVISIONAL — sentiment cold start (254 MB checkpoint + torch load) is
+      # UNKNOWN (handoff §13, plan §7A.9). This grace is a generous guess to
+      # avoid killing the container mid-load; it is set for real in C8.3.
+      start_period: 120s
+
+  postgres:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    # D-39 (C7): a named volume for Postgres DATA ONLY, so migrations survive
+    # `docker compose down`. Scoped strictly to Postgres — no volume, bind
+    # mount or tmpfs is added anywhere the backend could write an image; the
+    # §7A.8 invariant ("nowhere to put a face image") is unchanged.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  fusion:
+    build:
+      context: .
+      dockerfile: docker/fusion.Dockerfile
+    env_file: .env
+    environment:
+      FUSION_DEBUG: ${FUSION_DEBUG:-0}
+      NODE_ENV: ${NODE_ENV:-development}
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Pure arithmetic, no model to load — cold start is expected to be
+      # near-instant, but this is an ESTIMATE, not measured (consistent with
+      # the other services' provisional grace periods; set for real in C8.3).
+      start_period: 10s
+    # No volume, bind mount or tmpfs anywhere (§7A.8) — nothing here ever
+    # touches a face image or message text; it only sees derived evidence.
+
+volumes:
+  # Postgres data only (D-39). Nothing else in this compose file gets a
+  # volume, bind mount or tmpfs — the §7A.8 "nowhere to write a face image"
+  # invariant is unchanged.
+  postgres_data:
