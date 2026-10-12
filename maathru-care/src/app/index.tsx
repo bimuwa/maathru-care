@@ -22,12 +22,8 @@ export default function IndexScreen() {
     return <Redirect href="/(doctor)/home" />;
   }
 
-  // Mother: check approval status
+  // Mother: navigate directly to dashboard
   if (user?.role === 'mother') {
-    const status = user.approvalStatus;
-    if (status === 'pending' || status === 'rejected') {
-      return <Redirect href={'/pending-approval' as any} />;
-    }
     return <Redirect href="/(mother)/home" />;
   }
 

@@ -6,9 +6,10 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Clock, CheckCircle, XCircle, Stethoscope, Building2, RefreshCw, LogOut, AlertTriangle } from 'lucide-react-native';
+import { Clock, CheckCircle, XCircle, Stethoscope, Building2, RefreshCw, LogOut, AlertTriangle, ArrowLeft, Sparkles } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -59,6 +60,11 @@ export default function PendingApprovalScreen() {
   };
 
   const handleLogout = async () => {
+    if (Platform.OS === 'web') {
+      await logout();
+      router.replace('/login');
+      return;
+    }
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -70,6 +76,12 @@ export default function PendingApprovalScreen() {
         },
       },
     ]);
+  };
+
+  const handleBypassToDashboard = async () => {
+    // Approve user locally so they can access the dashboard immediately
+    await updateUser({ approvalStatus: 'approved' });
+    router.replace('/(mother)/home');
   };
 
   const handleReselect = async () => {
@@ -215,14 +227,33 @@ export default function PendingApprovalScreen() {
           </Text>
         </View>
 
+        {/* Action buttons */}
+        <TouchableOpacity
+          onPress={handleBypassToDashboard}
+          activeOpacity={0.85}
+          className="flex-row items-center justify-center bg-emerald-700 rounded-[14px] py-3.5 w-full mb-3 shadow-sm"
+        >
+          <Sparkles color="#FFFFFF" size={16} />
+          <Text className="ml-2 font-bold text-sm text-white">Continue to Dashboard</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={checkStatus}
           disabled={checking}
           activeOpacity={0.8}
-          className="flex-row items-center justify-center bg-slate-100 rounded-[14px] py-3.5 w-full mb-4"
+          className="flex-row items-center justify-center bg-slate-100 rounded-[14px] py-3.5 w-full mb-3"
         >
           <RefreshCw color={checking ? '#CBD5E1' : '#64748B'} size={16} />
-          <Text className={`ml-2 font-semibold text-sm ${checking ? 'text-slate-300' : 'text-slate-600'}`}>Check Now</Text>
+          <Text className={`ml-2 font-semibold text-sm ${checking ? 'text-slate-300' : 'text-slate-600'}`}>Check Approval Status</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleLogout}
+          activeOpacity={0.8}
+          className="flex-row items-center justify-center bg-slate-50 border border-slate-200 rounded-[14px] py-3.5 w-full mb-3"
+        >
+          <ArrowLeft color="#64748B" size={16} />
+          <Text className="ml-2 font-semibold text-sm text-slate-700">Back to Login / Switch Account</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={handleLogout} className="flex-row items-center py-2">

@@ -59,7 +59,7 @@ function getDueDateInfo(gestationalWeeks: number): { weeksLeft: number; daysLeft
 
 export default function MotherHomeScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [latestRisk, setLatestRisk] = useState<RiskPredictionResult | null>(null);
   const [hasAlert, setHasAlert] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -85,9 +85,22 @@ export default function MotherHomeScreen() {
         const statusRes = await api.getDoctorStatus(user.assignedDoctorId);
         if (statusRes.success) setDoctorStatus(statusRes);
       }
+      // Check approval status in background if still pending
+      if (user.approvalStatus === 'pending') {
+        const approvalRes = await api.checkApprovalStatus(user.id);
+        if (approvalRes.status === 'approved') {
+          await updateUser({
+            approvalStatus: 'approved',
+            assignedDoctorId: approvalRes.request?.doctorId ?? user.assignedDoctorId,
+            assignedDoctorName: approvalRes.request?.doctorName ?? user.assignedDoctorName,
+          });
+        } else if (approvalRes.status === 'rejected') {
+          await updateUser({ approvalStatus: 'rejected' });
+        }
+      }
     } catch { }
     finally { setIsLoading(false); setRefreshing(false); }
-  }, [user?.id, user?.assignedDoctorId]);
+  }, [user?.id, user?.assignedDoctorId, user?.approvalStatus, updateUser]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -146,6 +159,54 @@ export default function MotherHomeScreen() {
       </View>
 
       <View className="px-5 -mt-4">
+
+        {/* ── Pending Verification Warning Banner ────────────────────────────────── */}
+        {user?.approvalStatus === 'pending' && (
+          <View className="bg-amber-50 border border-amber-200 rounded-[20px] p-4 mb-4 shadow-sm flex-row items-start">
+            <View className="w-10 h-10 rounded-full bg-amber-100 items-center justify-center mr-3 mt-0.5">
+              <Clock color="#D97706" size={20} />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center justify-between mb-1">
+                <Text className="text-amber-900 font-bold text-sm">Doctor Verification Pending</Text>
+                <TouchableOpacity
+                  onPress={() => router.push('/pending-approval' as any)}
+                  className="bg-amber-200/60 px-2.5 py-1 rounded-full"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-amber-900 font-semibold text-[11px]">View Status</Text>
+                </TouchableOpacity>
+              </View>
+              <Text className="text-amber-700 text-xs leading-4">
+                Your profile has been sent to <Text className="font-semibold text-amber-900">{user?.assignedDoctorName || 'your doctor'}</Text>. You can still use meal scan, nutrition & health tools while awaiting review.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Rejected Request Banner ──────────────────────────────────────────── */}
+        {user?.approvalStatus === 'rejected' && (
+          <View className="bg-red-50 border border-red-200 rounded-[20px] p-4 mb-4 shadow-sm flex-row items-start">
+            <View className="w-10 h-10 rounded-full bg-red-100 items-center justify-center mr-3 mt-0.5">
+              <AlertTriangle color="#DC2626" size={20} />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center justify-between mb-1">
+                <Text className="text-red-900 font-bold text-sm">Doctor Request Declined</Text>
+                <TouchableOpacity
+                  onPress={() => router.push('/pending-approval' as any)}
+                  className="bg-red-200/60 px-2.5 py-1 rounded-full"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-red-900 font-semibold text-[11px]">Change Doctor</Text>
+                </TouchableOpacity>
+              </View>
+              <Text className="text-red-700 text-xs leading-4">
+                The doctor was unable to take new patients. Please choose a different physician to connect with.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* ── SOS BUTTON ──────────────────────────────────────────────────────── */}
         <TouchableOpacity

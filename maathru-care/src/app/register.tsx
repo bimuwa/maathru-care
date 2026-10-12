@@ -231,7 +231,7 @@ export default function RegisterScreen() {
       }, registeredToken);
       api.setAuthToken(registeredToken);
 
-      router.replace('/pending-approval' as any);
+      router.replace('/(mother)/home');
     } catch (err: any) {
       setStep('doctor_select');
       Alert.alert('Error', err.message || 'Failed to send request. Please try again.');

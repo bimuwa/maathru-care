@@ -220,9 +220,13 @@ class ApiService {
       .select('*')
       .eq('email', email)
       .eq('password', password)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      throw new Error(`Database error: ${error.message}`);
+    }
+
+    if (!data) {
       throw new Error('Invalid email or password');
     }
 

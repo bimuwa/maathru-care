@@ -8,6 +8,7 @@ import {
   Alert,
   ScrollView,
   Animated,
+  Platform,
 } from 'react-native';
 import {
   Bell, CheckCircle, XCircle, User, Droplet, Calendar,
@@ -85,6 +86,46 @@ export default function DoctorApprovalBanner({ onApproved }: Props) {
   }, [fetchRequests]);
 
   const handleRespond = async (request: ApprovalRequest, action: 'approve' | 'reject') => {
+    const executeAction = async () => {
+      setActionLoading(true);
+      try {
+        await api.respondToApprovalRequest(request.id, action);
+        // Remove this request from local list immediately
+        setRequests(prev => prev.filter(r => r.id !== request.id));
+        setSelectedRequest(null);
+
+        if (action === 'approve') {
+          if (Platform.OS === 'web') {
+            setModalVisible(false);
+            onApproved?.();
+          } else {
+            Alert.alert(
+              '✅ Patient Approved!',
+              `${request.patientName} has been notified and can now access all Maathru Care features.`,
+              [{ text: 'OK', onPress: () => { setModalVisible(false); onApproved?.(); } }]
+            );
+          }
+        } else {
+          setModalVisible(false);
+        }
+      } catch (err: any) {
+        Alert.alert('Error', err.message || 'Failed to respond. Please try again.');
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmTitle = action === 'approve'
+        ? `Approve ${request.patientName}?`
+        : `Decline ${request.patientName}?`;
+      if (typeof window !== 'undefined' && window.confirm) {
+        if (!window.confirm(confirmTitle)) return;
+      }
+      await executeAction();
+      return;
+    }
+
     const confirmTitle = action === 'approve'
       ? `Approve ${request.patientName}?`
       : `Decline ${request.patientName}?`;
@@ -97,33 +138,7 @@ export default function DoctorApprovalBanner({ onApproved }: Props) {
       {
         text: action === 'approve' ? 'Approve' : 'Decline',
         style: action === 'approve' ? 'default' : 'destructive',
-        onPress: async () => {
-          setActionLoading(true);
-          try {
-            await api.respondToApprovalRequest(request.id, action);
-            // Remove this request from local list immediately
-            setRequests(prev => prev.filter(r => r.id !== request.id));
-            setSelectedRequest(null);
-
-            if (action === 'approve') {
-              Alert.alert(
-                '✅ Patient Approved!',
-                `${request.patientName} has been notified and can now access all Maathru Care features.`,
-                [{ text: 'OK', onPress: () => { setModalVisible(false); onApproved?.(); } }]
-              );
-            } else {
-              Alert.alert(
-                'Request Declined',
-                `${request.patientName} has been notified. They can select a different doctor.`,
-                [{ text: 'OK', onPress: () => setModalVisible(false) }]
-              );
-            }
-          } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to respond. Please try again.');
-          } finally {
-            setActionLoading(false);
-          }
-        },
+        onPress: executeAction,
       },
     ]);
   };
