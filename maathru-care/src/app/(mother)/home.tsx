@@ -4,6 +4,7 @@ import {
   Alert, Modal, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import {
   Brain, Activity, Bell, ChevronRight, Heart, AlertTriangle,
   TrendingUp, HeartPulse, Pill, ShieldAlert, Calendar, Clock,
@@ -134,8 +135,10 @@ export default function MotherHomeScreen() {
   const docStatus = doctorStatus?.status ? STATUS_INFO[doctorStatus.status] ?? STATUS_INFO.available : null;
 
   return (
+    <View style={{ flex: 1 }}>
     <ScrollView
       className="flex-1 bg-slate-50"
+      contentContainerStyle={{ paddingBottom: 90 }}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#15803D" />}
     >
@@ -419,5 +422,21 @@ export default function MotherHomeScreen() {
         </View>
       </Modal>
     </ScrollView>
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel="Open chat"
+      activeOpacity={0.85}
+      onPress={() => router.push({ pathname: '/chatbot', params: { consent: '1' } })}
+      style={{
+        position: 'absolute', right: 28, bottom: 11,
+        width: 58, height: 58, borderRadius: 29,
+        backgroundColor: '#D96C8A', alignItems: 'center', justifyContent: 'center',
+        borderWidth: 5, borderColor: '#FFFFFF',
+        shadowColor: '#B94F70', shadowOpacity: 0.25, shadowRadius: 9, elevation: 6,
+      }}
+    >
+      <Ionicons name="chatbubble-ellipses" size={23} color="#FFFFFF" />
+    </TouchableOpacity>
+    </View>
   );
 }

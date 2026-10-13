@@ -11,3 +11,4 @@ npm-debug.*
 *.orig.*
 .DS_Store
 bin/
+.playwright-mcp/

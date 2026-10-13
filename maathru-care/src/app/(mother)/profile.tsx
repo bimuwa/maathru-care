@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -36,7 +37,14 @@ export default function MotherProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to sign out?')) {
+        await logout();
+        router.replace('/login');
+      }
+      return;
+    }
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',

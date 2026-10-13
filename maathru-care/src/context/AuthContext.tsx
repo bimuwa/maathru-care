@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAppStore as useChatbotStore } from '../features/chatbot/store';
 
 export type UserRole = 'mother' | 'doctor';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'not_required';
@@ -69,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (userData: AuthUser, token: string) => {
     const fullUser: AuthUser = { ...userData, token };
+    if (user?.id !== userData.id) useChatbotStore.getState().reset();
     setUser(fullUser);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(fullUser));
   };
@@ -83,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    useChatbotStore.getState().reset();
     setUser(null);
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
   };

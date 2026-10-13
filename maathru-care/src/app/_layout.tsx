@@ -33,6 +33,7 @@ export default function RootLayout() {
         <Stack.Screen name="vitals" options={{ headerShown: false }} />
         <Stack.Screen name="medications" options={{ headerShown: false }} />
         <Stack.Screen name="explore" options={{ headerShown: false }} />
+        <Stack.Screen name="chatbot" options={{ headerShown: false }} />
       </Stack>
     </AuthProvider>
   );
