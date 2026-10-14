@@ -2,23 +2,25 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
   StyleSheet, Dimensions, LayoutAnimation, Platform, UIManager,
-  FlatList, ViewToken
+  FlatList, ViewToken, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
   HeartPulse, Calendar, AlertCircle, CheckCircle2,
   ShieldAlert, RefreshCw, Zap, Activity, Info, Check, TrendingUp,
-  Camera, ChevronLeft, ChevronRight, CalendarX
+  Camera, ChevronLeft, ChevronRight, CalendarX, HelpCircle
 } from 'lucide-react-native';
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { mealService } from '@/services/mealService';
 import { gdmRiskService } from '@/services/gdmRiskService';
+import { gdmV4ResearchService } from '@/services/gdmV4ResearchService';
 import { gdmCacheService, GDMCacheEntry } from '@/services/gdmCacheService';
 import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
 import { useAuth } from '@/context/AuthContext';
 import { GDMRiskResponse } from '@/types/gdm';
+import { GDMV4RiskResponse, GDMV4FormState, MedicalHistoryChoice } from '@/types/gdmV4';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -294,6 +296,99 @@ export default function WellnessScreen() {
   const [isCheckingGdm, setIsCheckingGdm] = useState(false);
   const [assessmentStage, setAssessmentStage] = useState(0);
   const [gdmError, setGdmError] = useState<string | null>(null);
+
+  // ─── GDM V4 Research State ────────────────────────────────────────────────
+  const [showV4Research, setShowV4Research] = useState(false);
+  const [v4Form, setV4Form] = useState<GDMV4FormState>({
+    age: '',
+    no_of_pregnancy: '',
+    family_history: null,
+    unexplained_prenatal_loss: null,
+    sedentary_lifestyle: null,
+  });
+  const [v4Loading, setV4Loading] = useState(false);
+  const [v4ResearchKey, setV4ResearchKey] = useState('');
+  const [v4Error, setV4Error] = useState<string | null>(null);
+  const [v4Result, setV4Result] = useState<GDMV4RiskResponse | null>(null);
+
+  const handlePrefillV4FromProfile = () => {
+    if (!maternalProfile) return;
+    setV4Form(prev => ({
+      ...prev,
+      age: maternalProfile.age ? String(maternalProfile.age) : prev.age,
+      no_of_pregnancy: maternalProfile.no_of_pregnancy !== undefined && maternalProfile.no_of_pregnancy !== null
+        ? String(maternalProfile.no_of_pregnancy)
+        : prev.no_of_pregnancy,
+      family_history: maternalProfile.family_history !== undefined && maternalProfile.family_history !== null
+        ? (maternalProfile.family_history === 1 ? 'yes' : 'no')
+        : prev.family_history,
+      unexplained_prenatal_loss: maternalProfile.unexplained_prenatal_loss !== undefined && maternalProfile.unexplained_prenatal_loss !== null
+        ? (maternalProfile.unexplained_prenatal_loss === 1 ? 'yes' : 'no')
+        : prev.unexplained_prenatal_loss,
+      sedentary_lifestyle: maternalProfile.sedentary_lifestyle !== undefined && maternalProfile.sedentary_lifestyle !== null
+        ? (maternalProfile.sedentary_lifestyle === 1 ? 'yes' : 'no')
+        : prev.sedentary_lifestyle,
+    }));
+  };
+
+  const handleRunV4Screening = async () => {
+    if (v4Loading) return;
+    setV4Error(null);
+    setV4Result(null);
+    const parsedAge = v4Form.age.trim() ? Number(v4Form.age.trim()) : NaN;
+    const parsedPregnancies = v4Form.no_of_pregnancy.trim() ? Number(v4Form.no_of_pregnancy.trim()) : NaN;
+
+    if (isNaN(parsedAge) || parsedAge < 10 || parsedAge > 70) {
+      setV4Error('Please provide a valid maternal age between 10 and 70.');
+      return;
+    }
+    if (!Number.isInteger(parsedPregnancies) || parsedPregnancies < 0 || parsedPregnancies > 25) {
+      setV4Error('Please provide a valid total pregnancies count (0 to 25).');
+      return;
+    }
+    if (!v4Form.family_history) {
+      setV4Error('Please select Yes, No, or Not sure for Family History.');
+      return;
+    }
+    if (v4Form.family_history === 'not_sure') {
+      setV4Error('Family history is selected as "Not sure". GDM V4 requires confirmed medical history and cannot guess. Please check your medical records.');
+      return;
+    }
+    if (!v4Form.unexplained_prenatal_loss) {
+      setV4Error('Please select Yes, No, or Not sure for Unexplained Prenatal Loss.');
+      return;
+    }
+    if (v4Form.unexplained_prenatal_loss === 'not_sure') {
+      setV4Error('Prenatal loss history is selected as "Not sure". GDM V4 requires confirmed medical history and cannot guess.');
+      return;
+    }
+    if (!v4Form.sedentary_lifestyle) {
+      setV4Error('Please select Yes, No, or Not sure for Sedentary Lifestyle.');
+      return;
+    }
+    if (v4Form.sedentary_lifestyle === 'not_sure') {
+      setV4Error('Sedentary lifestyle is selected as "Not sure". Please select Yes or No based on your regular activity level.');
+      return;
+    }
+
+    setV4Loading(true);
+    try {
+      const res = await gdmV4ResearchService.predictScreening({
+        age: parsedAge,
+        no_of_pregnancy: parsedPregnancies,
+        family_history: v4Form.family_history === 'yes' ? 1 : 0,
+        unexplained_prenatal_loss: v4Form.unexplained_prenatal_loss === 'yes' ? 1 : 0,
+        sedentary_lifestyle: v4Form.sedentary_lifestyle === 'yes' ? 1 : 0,
+      }, v4ResearchKey);
+
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setV4Result(res);
+    } catch (err: any) {
+      setV4Error(err.message || 'Failed to complete research screening.');
+    } finally {
+      setV4Loading(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -729,6 +824,261 @@ export default function WellnessScreen() {
       );
     }
 
+    const renderV4ResearchSection = () => {
+      return (
+        <View style={s.v4Card}>
+          <TouchableOpacity
+            style={s.v4HeaderRow}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setShowV4Research(!showV4Research);
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <View style={s.researchBadge}>
+                  <Text style={s.researchBadgeText}>RESEARCH PREVIEW</Text>
+                </View>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted, marginLeft: 8 }}>v4.0 Conservative</Text>
+              </View>
+              <Text style={s.v4CardTitle}>GDM V4 Pre-OGTT Screener</Text>
+              <Text style={s.v4CardSubtitle}>
+                Experimental 5-factor random forest screening without OGTT or BMI.
+              </Text>
+            </View>
+            <View style={[s.chevronCircle, showV4Research && s.chevronCircleActive]}>
+              <ChevronRight
+                size={18}
+                color={showV4Research ? '#FFF' : COLORS.textHeader}
+                style={{ transform: [{ rotate: showV4Research ? '90deg' : '0deg' }] }}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {showV4Research && (
+            <View style={s.v4ExpandedContent}>
+              <View style={s.v4NoticeBanner}>
+                <Info size={16} color={COLORS.secondary} style={{ marginRight: 8, marginTop: 2 }} />
+                <Text style={s.v4NoticeText}>
+                  This experimental model assesses risk indications strictly from 5 non-invasive antenatal factors. It is an academic demonstration and does NOT replace diagnostic Oral Glucose Tolerance Testing (OGTT).
+                </Text>
+              </View>
+
+              {v4Result ? (
+                // ─── Result View ─────────────────────────────────────────────
+                <View style={s.v4ResultContainer}>
+                  <View style={s.v4ResultHeader}>
+                    <Text style={s.v4ResultModelName}>GDM V4 Conservative Pipeline</Text>
+                    <Text style={s.v4ResultVersion}>{v4Result.model_version}</Text>
+                  </View>
+
+                  <View
+                    style={[
+                      s.v4OutcomeBadge,
+                      { backgroundColor: v4Result.screen_positive ? COLORS.amberBg : COLORS.primaryBg },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        s.v4OutcomeDot,
+                        { backgroundColor: v4Result.screen_positive ? COLORS.amber : COLORS.primary },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        s.v4OutcomeText,
+                        { color: v4Result.screen_positive ? COLORS.amber : COLORS.primary },
+                      ]}
+                    >
+                      {v4Result.screen_positive
+                        ? 'Screen Positive (Elevated Indicators)'
+                        : 'Screen Negative (Lower Indicators)'}
+                    </Text>
+                  </View>
+
+                  <View style={s.v4ScoreCard}>
+                    <Text style={s.v4ScoreLabel}>Experimental Algorithmic Score</Text>
+                    <Text style={s.v4ScoreValue}>{v4Result.model_score.toFixed(4)}</Text>
+                    <Text style={s.v4ScoreSubtext}>
+                      Research Threshold: {v4Result.threshold.toFixed(2)} • Positive if score ≥ {v4Result.threshold.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  <View style={s.v4DisclaimerBox}>
+                    <ShieldAlert size={18} color={COLORS.amber} style={{ marginRight: 8, marginTop: 2 }} />
+                    <Text style={s.v4DisclaimerText}>
+                      {v4Result.disclaimer}
+                      {'\n\n'}
+                      • This score is NOT a clinical percentage chance of diabetes.
+                      {'\n'}
+                      • A negative screening does NOT confirm normal maternal health or replace doctor evaluation.
+                      {'\n'}
+                      • No dietary changes or medications should be initiated based on this prototype.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={s.v4ResetBtn}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setV4Result(null);
+                    }}
+                  >
+                    <RefreshCw size={16} color={COLORS.textMain} style={{ marginRight: 6 }} />
+                    <Text style={s.v4ResetBtnText}>Test Different Parameters</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                // ─── Form View ───────────────────────────────────────────────
+                <View style={s.v4FormContainer}>
+                  <View style={s.v4FormGroup}>
+                    <Text style={s.v4Label}>Research access key</Text>
+                    <Text style={s.v4SubLabel}>Use the key issued by your study administrator. It is kept only for this screen session.</Text>
+                    <TextInput
+                      style={s.v4Input}
+                      value={v4ResearchKey}
+                      onChangeText={setV4ResearchKey}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      placeholder="Research access key"
+                    />
+                  </View>
+                  {maternalProfile && (
+                    <TouchableOpacity style={s.v4PrefillBtn} onPress={handlePrefillV4FromProfile}>
+                      <Zap size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+                      <Text style={s.v4PrefillBtnText}>Pre-fill from Health Profile (Review Before Submitting)</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* 1. Age */}
+                  <View style={s.v4FormGroup}>
+                    <Text style={s.v4Label}>1. Maternal Age (Years)</Text>
+                    <TextInput
+                      style={s.v4Input}
+                      keyboardType="numeric"
+                      placeholder="e.g. 29"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={v4Form.age}
+                      onChangeText={(val) => setV4Form((prev) => ({ ...prev, age: val }))}
+                    />
+                  </View>
+
+                  {/* 2. Total Pregnancies */}
+                  <View style={s.v4FormGroup}>
+                    <Text style={s.v4Label}>2. Total Number of Pregnancies</Text>
+                    <Text style={s.v4SubLabel}>
+                      Total pregnancies (gravida) including current pregnancy, not only living children.
+                    </Text>
+                    <TextInput
+                      style={s.v4Input}
+                      keyboardType="numeric"
+                      placeholder="e.g. 2"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={v4Form.no_of_pregnancy}
+                      onChangeText={(val) => setV4Form((prev) => ({ ...prev, no_of_pregnancy: val }))}
+                    />
+                  </View>
+
+                  {/* 3. Family History */}
+                  <View style={s.v4FormGroup}>
+                    <Text style={s.v4Label}>3. Family History of Diabetes</Text>
+                    <Text style={s.v4SubLabel}>Do you have a parent or sibling diagnosed with diabetes?</Text>
+                    <View style={s.v4ChoiceRow}>
+                      {(['yes', 'no', 'not_sure'] as MedicalHistoryChoice[]).map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          style={[s.v4ChoiceBtn, v4Form.family_history === c && s.v4ChoiceBtnActive]}
+                          onPress={() => setV4Form((prev) => ({ ...prev, family_history: c }))}
+                        >
+                          <Text style={[s.v4ChoiceText, v4Form.family_history === c && s.v4ChoiceTextActive]}>
+                            {c === 'yes' ? 'Yes' : c === 'no' ? 'No' : 'Not sure'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {v4Form.family_history === 'not_sure' && (
+                      <Text style={s.v4UnsureWarning}>Model requires confirmed history; check medical records.</Text>
+                    )}
+                  </View>
+
+                  {/* 4. Unexplained Prenatal Loss */}
+                  <View style={s.v4FormGroup}>
+                    <Text style={s.v4Label}>4. History of Unexplained Prenatal Loss</Text>
+                    <Text style={s.v4SubLabel}>Previous unexplained stillbirth or miscarriage in a past pregnancy.</Text>
+                    <View style={s.v4ChoiceRow}>
+                      {(['yes', 'no', 'not_sure'] as MedicalHistoryChoice[]).map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          style={[s.v4ChoiceBtn, v4Form.unexplained_prenatal_loss === c && s.v4ChoiceBtnActive]}
+                          onPress={() => setV4Form((prev) => ({ ...prev, unexplained_prenatal_loss: c }))}
+                        >
+                          <Text style={[s.v4ChoiceText, v4Form.unexplained_prenatal_loss === c && s.v4ChoiceTextActive]}>
+                            {c === 'yes' ? 'Yes' : c === 'no' ? 'No' : 'Not sure'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {v4Form.unexplained_prenatal_loss === 'not_sure' && (
+                      <Text style={s.v4UnsureWarning}>Model requires confirmed history; check medical records.</Text>
+                    )}
+                  </View>
+
+                  {/* 5. Sedentary Lifestyle */}
+                  <View style={s.v4FormGroup}>
+                    <Text style={s.v4Label}>5. Sedentary Lifestyle</Text>
+                    <Text style={s.v4SubLabel}>
+                      Predominantly sitting with minimal regular physical activity prior to or during pregnancy.
+                    </Text>
+                    <View style={s.v4ChoiceRow}>
+                      {(['yes', 'no', 'not_sure'] as MedicalHistoryChoice[]).map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          style={[s.v4ChoiceBtn, v4Form.sedentary_lifestyle === c && s.v4ChoiceBtnActive]}
+                          onPress={() => setV4Form((prev) => ({ ...prev, sedentary_lifestyle: c }))}
+                        >
+                          <Text style={[s.v4ChoiceText, v4Form.sedentary_lifestyle === c && s.v4ChoiceTextActive]}>
+                            {c === 'yes' ? 'Yes' : c === 'no' ? 'No' : 'Not sure'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {v4Form.sedentary_lifestyle === 'not_sure' && (
+                      <Text style={s.v4UnsureWarning}>Please review your daily activity level before testing.</Text>
+                    )}
+                  </View>
+
+                  {v4Error && (
+                    <View style={[s.alertBox, { backgroundColor: COLORS.accentBg }]}>
+                      <AlertCircle size={16} color={COLORS.accent} style={{ marginRight: 8, marginTop: 2 }} />
+                      <Text style={[s.alertText, { color: COLORS.accent }]}>{v4Error}</Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={[s.btnPrimary, v4Loading && { opacity: 0.7 }]}
+                    onPress={handleRunV4Screening}
+                    disabled={v4Loading}
+                  >
+                    {v4Loading ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text style={s.btnPrimaryText}>Run Research Screener</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <Text style={s.v4FormFooterNote}>
+                    Experimental research tool only. Submitting does not alter your clinical profile or diet guidelines.
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      );
+    };
+
     if (hasValidCache && result) {
       const isHigh = result.riskCategory === 'High Risk';
       const isMod = result.riskCategory === 'Moderate Risk';
@@ -758,6 +1108,9 @@ export default function WellnessScreen() {
           <TouchableOpacity onPress={handleCheckGdm} disabled={isCheckingGdm} style={s.btnSecondary}>
              {isCheckingGdm ? <ActivityIndicator size="small" color={COLORS.textMain} /> : <Text style={s.btnSecondaryText}>Reassess Risk</Text>}
           </TouchableOpacity>
+
+          {/* Research Screener Section */}
+          {renderV4ResearchSection()}
         </View>
       );
     }
@@ -794,6 +1147,9 @@ export default function WellnessScreen() {
         <Text style={s.disclaimerText}>
           This result is a risk estimate, not a medical diagnosis. Please discuss your result with your healthcare professional.
         </Text>
+
+        {/* Research Screener Section */}
+        {renderV4ResearchSection()}
       </View>
     );
   };
@@ -944,4 +1300,46 @@ const s = StyleSheet.create({
   stepTextContainer: { flex: 1 },
   stepTitle: { fontSize: 15, fontWeight: '600', color: COLORS.textHeader, marginBottom: 4 },
   stepSubtitle: { fontSize: 13, color: COLORS.textMain },
+
+  // GDM V4 Research Section Styles
+  v4Card: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, marginTop: 16, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 10, elevation: 2, borderWidth: 1, borderColor: '#EEF2F6' },
+  v4HeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  researchBadge: { backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  researchBadgeText: { fontSize: 10, fontWeight: '700', color: '#D97706', letterSpacing: 0.5 },
+  v4CardTitle: { fontSize: 17, fontWeight: '700', color: COLORS.textHeader, marginTop: 6, marginBottom: 2 },
+  v4CardSubtitle: { fontSize: 13, color: COLORS.textMuted, lineHeight: 18 },
+  chevronCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  chevronCircleActive: { backgroundColor: COLORS.primary },
+  v4ExpandedContent: { marginTop: 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  v4NoticeBanner: { flexDirection: 'row', backgroundColor: COLORS.secondaryBg, padding: 12, borderRadius: 14, marginBottom: 16 },
+  v4NoticeText: { flex: 1, fontSize: 12, color: COLORS.secondary, lineHeight: 17 },
+  v4ResultContainer: { backgroundColor: '#F8FAFC', borderRadius: 18, padding: 16 },
+  v4ResultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  v4ResultModelName: { fontSize: 14, fontWeight: '700', color: COLORS.textHeader },
+  v4ResultVersion: { fontSize: 11, fontWeight: '600', color: COLORS.textMuted, backgroundColor: '#E2E8F0', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  v4OutcomeBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, marginBottom: 14 },
+  v4OutcomeDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  v4OutcomeText: { fontSize: 14, fontWeight: '700' },
+  v4ScoreCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  v4ScoreLabel: { fontSize: 12, fontWeight: '600', color: COLORS.textMuted, marginBottom: 4 },
+  v4ScoreValue: { fontSize: 32, fontWeight: '800', color: COLORS.textHeader, marginBottom: 4 },
+  v4ScoreSubtext: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center' },
+  v4DisclaimerBox: { flexDirection: 'row', backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FEF3C7', padding: 12, borderRadius: 12, marginBottom: 14 },
+  v4DisclaimerText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },
+  v4ResetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#E2E8F0' },
+  v4ResetBtnText: { fontSize: 13, fontWeight: '600', color: COLORS.textHeader },
+  v4FormContainer: { marginTop: 4 },
+  v4PrefillBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryBg, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, marginBottom: 16 },
+  v4PrefillBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
+  v4FormGroup: { marginBottom: 16 },
+  v4Label: { fontSize: 14, fontWeight: '600', color: COLORS.textHeader, marginBottom: 4 },
+  v4SubLabel: { fontSize: 12, color: COLORS.textMuted, marginBottom: 8, lineHeight: 16 },
+  v4Input: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: COLORS.textHeader },
+  v4ChoiceRow: { flexDirection: 'row', gap: 8 },
+  v4ChoiceBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' },
+  v4ChoiceBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  v4ChoiceText: { fontSize: 13, fontWeight: '600', color: COLORS.textHeader },
+  v4ChoiceTextActive: { color: '#FFFFFF' },
+  v4UnsureWarning: { fontSize: 11, color: COLORS.amber, marginTop: 4, fontWeight: '500' },
+  v4FormFooterNote: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 12, lineHeight: 16 },
 });
