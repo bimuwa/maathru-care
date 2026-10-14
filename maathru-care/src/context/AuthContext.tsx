@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppStore as useChatbotStore } from '../features/chatbot/store';
+import { supabase } from '../lib/supabase';
 
 export type UserRole = 'mother' | 'doctor';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'not_required';
@@ -55,7 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.warn('[AuthContext] Stale session with non-UUID ID detected — clearing session.');
             await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
           } else {
-            setUser(parsed);
+            // The stored user is only valid while a Supabase Auth session exists (this also
+            // catches users stored before the move to Supabase Auth).
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+              console.warn('[AuthContext] No Supabase session for stored user — clearing session.');
+              await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+            } else {
+              setUser(parsed);
+            }
           }
         }
       } catch (e) {
@@ -66,6 +75,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
     loadSession();
+  }, []);
+
+  // Drops the app user + chatbot state, same as logout (also used when Supabase ends the session).
+  const clearSession = async () => {
+    useChatbotStore.getState().reset();
+    setUser(null);
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+  };
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        clearSession();
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (userData: AuthUser, token: string) => {
@@ -86,8 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     useChatbotStore.getState().reset();
-    setUser(null);
-    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('[AuthContext] Supabase signOut failed:', e);
+    }
+    await clearSession();
   };
 
   return (

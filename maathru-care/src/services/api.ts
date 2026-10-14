@@ -214,22 +214,13 @@ class ApiService {
   }
 
   // ─── Auth ───────────────────────────────────────────────────────────────
-  public async login(email: string, password: string): Promise<LoginResponse> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .eq('password', password)
-      .maybeSingle();
+  // Escapes LIKE wildcards so an email can be matched case-insensitively with ilike.
+  private emailPattern(email: string): string {
+    return email.replace(/[\\%_]/g, '\\$&');
+  }
 
-    if (error) {
-      throw new Error(`Database error: ${error.message}`);
-    }
-
-    if (!data) {
-      throw new Error('Invalid email or password');
-    }
-
+  // token stays = users.id (used only by the separate LAN backend); the Supabase JWT is for the chatbot.
+  private toLoginResponse(data: any): LoginResponse {
     return {
       success: true,
       token: data.id, // Using user ID as a simple session token
@@ -250,12 +241,82 @@ class ApiService {
     };
   }
 
+  public async login(rawEmail: string, password: string): Promise<LoginResponse> {
+    const email = rawEmail.trim().toLowerCase();
+
+    const { data: signIn, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (!signInError && signIn.session) {
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('auth_user_id', signIn.session.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        await supabase.auth.signOut();
+        throw new Error(`Database error: ${profileError.message}`);
+      }
+      if (!profile) {
+        await supabase.auth.signOut();
+        throw new Error('No profile linked to this account');
+      }
+      return this.toLoginResponse(profile);
+    }
+
+    if (signInError && signInError.code !== 'invalid_credentials') {
+      throw new Error(signInError.message);
+    }
+
+    // LEGACY MIGRATION: accounts created before Supabase Auth only exist as a users row with a
+    // plaintext password. On first successful login, create the Supabase Auth user, link it and
+    // wipe the stored password. Delete this branch once every users row has auth_user_id.
+    const { data: legacy, error: legacyError } = await supabase
+      .from('users')
+      .select('*')
+      .ilike('email', this.emailPattern(email))
+      .eq('password', password)
+      .is('auth_user_id', null)
+      .maybeSingle();
+
+    if (legacyError) {
+      throw new Error(`Database error: ${legacyError.message}`);
+    }
+    if (!legacy) {
+      throw new Error('Invalid email or password');
+    }
+
+    const { data: signUp, error: signUpError } = await supabase.auth.signUp({ email, password });
+    if (signUpError) {
+      throw new Error(signUpError.message);
+    }
+    if (!signUp.session || !signUp.user) {
+      throw new Error('Email confirmation is enabled in Supabase; turn it off for this app');
+    }
+
+    const { data: linked, error: linkError } = await supabase
+      .from('users')
+      .update({ auth_user_id: signUp.user.id, password: null })
+      .eq('id', legacy.id)
+      .select()
+      .single();
+
+    if (linkError) {
+      await supabase.auth.signOut();
+      throw new Error(`Database error: ${linkError.message}`);
+    }
+
+    return this.toLoginResponse(linked);
+  }
+
   public async register(data: RegisterData): Promise<LoginResponse> {
+    const email = data.email.trim().toLowerCase();
+
     // Check if email already exists
     const { data: existing, error: checkError } = await supabase
       .from('users')
       .select('id')
-      .eq('email', data.email)
+      .ilike('email', this.emailPattern(email))
       .maybeSingle();
       
     if (checkError) {
@@ -266,9 +327,17 @@ class ApiService {
       throw new Error('Email already registered');
     }
 
+    const { data: signUp, error: signUpError } = await supabase.auth.signUp({ email, password: data.password });
+    if (signUpError) {
+      throw new Error(signUpError.message);
+    }
+    if (!signUp.session || !signUp.user) {
+      throw new Error('Email confirmation is enabled in Supabase; turn it off for this app');
+    }
+
     const insertData: any = {
-      email: data.email,
-      password: data.password,
+      email,
+      auth_user_id: signUp.user.id,
       role: data.role,
       full_name: data.fullName,
       phone: data.phone,
@@ -311,6 +380,7 @@ class ApiService {
       .single();
 
     if (error) {
+      await supabase.auth.signOut();
       throw new Error(error.message);
     }
 

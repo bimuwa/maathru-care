@@ -19,7 +19,7 @@ import { config } from "./config";
 import { createChatApi } from "./api/client";
 import { grantCameraConsent, revokeCamera, setCameraActive, analyseMood } from "./api/sessionApi";
 import { sessionId } from "./session";
-import { getChatbotAccessToken } from "./chatbotAuth";
+import { getChatbotAccessToken, subscribeChatbotToken } from "./chatbotAuth";
 // Fonts are loaded here (not in a root layout) so the Nunito/Sinhala setup stays scoped to the chatbot.
 export function ChatbotScreen() {
   const [loaded] = useFonts({ Nunito_400Regular, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, NotoSansSinhala_400Regular, NotoSansSinhala_700Bold });
@@ -28,6 +28,7 @@ export function ChatbotScreen() {
     getChatbotAccessToken().then(token => { if (!cancelled) useAppStore.getState().setAccessToken(token); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => subscribeChatbotToken(), []);
   if (!loaded) return <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.paper }}><ActivityIndicator color={colors.deepPink} /></View>;
   return <Chat />;
 }
