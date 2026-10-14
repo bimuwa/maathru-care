@@ -24,7 +24,6 @@ decided**. Code lives in `ml/` and `dev/`; results live in `experiments/`.
 | `system/` | Architecture, mood states, safety policy, performance protocol |
 | `decisions/` | Formal decision memos — why a choice was made |
 | `ml/` | ML findings records — what each notebook measured and what it means |
-| `archive/` | Superseded, duplicate and historical material. **Nothing is ever deleted.** |
 
 ## The documents that matter most
 

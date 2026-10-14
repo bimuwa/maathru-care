@@ -1,28 +1,28 @@
-name: backend-ci
+name: chatbot-backend-ci
 
 on:
   push:
     paths:
-      - "dev/backend/**"
-      - ".github/workflows/backend-ci.yml"
+      - "chatbot/dev/backend/**"
+      - ".github/workflows/chatbot-backend-ci.yml"
   pull_request:
     paths:
-      - "dev/backend/**"
-      - ".github/workflows/backend-ci.yml"
+      - "chatbot/dev/backend/**"
+      - ".github/workflows/chatbot-backend-ci.yml"
 
 jobs:
   build-lint-test:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: dev/backend
+        working-directory: chatbot/dev/backend
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: dev/backend/package-lock.json
+          cache-dependency-path: chatbot/dev/backend/package-lock.json
       - run: npm ci
       - run: npm run typecheck
 
@@ -66,7 +66,7 @@ jobs:
       # build time (e.g. downloaded in the Dockerfile or a CI step) rather
       # than copied from a local checkout.
       - name: Write a minimal CI .env
-        working-directory: .
+        working-directory: chatbot
         run: |
           cat > .env <<'EOF'
           NODE_ENV=development
@@ -105,10 +105,10 @@ jobs:
           LLM_MODEL=
           EOF
       - name: Start fusion / postgres
-        working-directory: .
+        working-directory: chatbot
         run: docker compose up -d fusion postgres
       - name: Wait for the stack to report healthy
-        working-directory: .
+        working-directory: chatbot
         run: |
           # ⛔ RESOLVE THE CONTAINER BY ID, NEVER BY GUESSED NAME.
           # Compose derives its project name from the DIRECTORY, so the
@@ -158,5 +158,5 @@ jobs:
         run: npm test
       - name: Tear down the stack
         if: always()
-        working-directory: .
+        working-directory: chatbot
         run: docker compose down -v

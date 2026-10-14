@@ -19,7 +19,6 @@ ml/*/data/processed/*
 *.tar.gz
 *.7z
 *.rar
-!docs/archive/*.zip
 
 # ─────────────────────────────────────────────────────────────
 # Model artifacts — weights and exports are rebuildable
@@ -58,8 +57,6 @@ checkpoints/
 #   ml/*/plots/*.png        research figures
 #   ml/*/outputs/*.json     run metadata, dataset summaries
 #   ml/*/outputs/*.csv      duplicate / corrupt-file lists
-#   experiments/results/    consolidated results
-#   experiments/reports/    written analysis
 # ─────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────
@@ -78,7 +75,7 @@ ENV/
 .mypy_cache/
 
 # ─────────────────────────────────────────────────────────────
-# Node / application workspace (dev/ is empty scaffold for now)
+# Node (backend)
 # ─────────────────────────────────────────────────────────────
 node_modules/
 dist/

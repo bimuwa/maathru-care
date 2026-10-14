@@ -5,8 +5,10 @@
  * module is authoritative — the frontend renderer is defence in depth, not the
  * primary control.
  *
- * The link cases mirror `dev/frontend/src/components/AssistantResponseContent.test.ts`
- * exactly. The two implementations MUST agree; they diverged once already.
+ * The link cases mirror the removed frontend test `AssistantResponseContent.test.ts`
+ * (see git history); the component now lives at
+ * `maathru-care/src/features/chatbot/components/AssistantResponseContent.tsx`.
+ * The two implementations MUST agree; they diverged once already.
  */
 
 import { describe, expect, it } from 'vitest';

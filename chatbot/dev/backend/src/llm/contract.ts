@@ -24,7 +24,7 @@
  * Plan: docs/plan/backend/LLM_INTEGRATION_PLAN.md §4, §12.
  */
 
-/** Mirrors dev/frontend/src/api/contracts.ts. Application-controlled. */
+/** Mirrors maathru-care/src/features/chatbot/api/contracts.ts. Application-controlled. */
 export type Language = 'si' | 'en';
 export type MoodState = 'calm' | 'neutral' | 'distressed' | 'unknown';
 export type ResponseMode = 'normal' | 'supportive' | 'safety';
