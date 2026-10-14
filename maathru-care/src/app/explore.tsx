@@ -6,12 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ExternalLink } from '@/components/external-link';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { RoleGuard } from '@/components/RoleGuard';
 import { Collapsible } from '@/components/ui/collapsible';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export default function TabTwoScreen() {
+function ExploreContent() {
   const safeAreaInsets = useSafeAreaInsets();
   const insets = {
     ...safeAreaInsets,
@@ -178,3 +179,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 });
+
+export default function TabTwoScreen() {
+  return (
+    <RoleGuard>
+      <ExploreContent />
+    </RoleGuard>
+  );
+}

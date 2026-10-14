@@ -11,9 +11,10 @@ import {
 import { useRouter } from 'expo-router';
 import { Clock, CheckCircle, XCircle, Stethoscope, Building2, RefreshCw, LogOut, AlertTriangle, ArrowLeft, Sparkles } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import { RoleGuard } from '../components/RoleGuard';
 import { api } from '../services/api';
 
-export default function PendingApprovalScreen() {
+function PendingApprovalContent() {
   const router = useRouter();
   const { user, updateUser, logout } = useAuth();
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected' | 'not_found'>(
@@ -262,5 +263,13 @@ export default function PendingApprovalScreen() {
         </TouchableOpacity>
       </View>
     </ScrollView>
+  );
+}
+
+export default function PendingApprovalScreen() {
+  return (
+    <RoleGuard role="mother">
+      <PendingApprovalContent />
+    </RoleGuard>
   );
 }

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -14,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { Heart, Mail, Lock, Eye, EyeOff, Stethoscope, Baby } from 'lucide-react-native';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { showAlert } from '../lib/alert';
 
 type LoginRole = 'mother' | 'doctor';
 
@@ -60,11 +60,11 @@ export default function LoginScreen() {
           router.replace('/(mother)/home');
         }
       } else {
-        Alert.alert('Login Failed', 'Invalid email or password. Please try again.');
+        showAlert('Login Failed', 'Invalid email or password. Please try again.');
       }
     } catch (err: any) {
-      Alert.alert(
-        'Connection Error',
+      showAlert(
+        /invalid email or password/i.test(err.message ?? '') ? 'Login Failed' : 'Connection Error',
         err.message || 'Unable to connect to server. Please check your Wi-Fi and try again.'
       );
     } finally {
