@@ -1,0 +1,2 @@
+# Workflows are YAML; keep LF regardless of the committer's OS.
+.github/** text eol=lf

@@ -15,10 +15,6 @@
 ## 📖 About the Project
 Maathru Care is a comprehensive maternal healthcare mobile application designed to support expectant and postpartum mothers, as well as healthcare assistants. It leverages advanced Artificial Intelligence and Computer Vision to provide real-time dietary recognition, automated nutrient tracking, and personalized wellness recommendations, ensuring a healthy journey through motherhood.
 
-> [!NOTE]
-> Architecture Diagram Placeholder
-> *(Insert Architecture Diagram Image Here)*
-
 ---
 
 ## ✨ Key Features
@@ -27,6 +23,7 @@ Maathru Care is a comprehensive maternal healthcare mobile application designed 
 - ❤️ **Maternal Wellness & Health Vitals Monitoring**: Keep track of essential health metrics seamlessly.
 - 🥗 **Personalized Meal & Health Recommendations**: Tailored advice based on dietary habits and health status.
 - 🎨 **Interactive & Accessible UI**: A user-friendly interface specifically designed for mothers.
+- Mood-aware Sinhala/English support chatbot (consent-based camera + text mood sensing)
 
 ---
 
@@ -39,6 +36,8 @@ Maathru Care is a comprehensive maternal healthcare mobile application designed 
 ### Backend
 - **Runtime**: Node.js / Python
 - **Framework**: FastAPI
+- **Auth & Database**: Supabase (Auth + Postgres)
+- **Chatbot**: Node.js/Express, Python services, Groq LLM
 
 ### AI / Machine Learning
 - **Model**: YOLO Object Detection Model (Custom trained for maternal food items)
@@ -52,68 +51,51 @@ Maathru Care is a comprehensive maternal healthcare mobile application designed 
 
 ## 📁 Project Directory Structure
 ```text
-maathru_care/
-├── .github/                # GitHub Actions CI/CD workflows
-├── backend/                # Backend API services (FastAPI/Node.js)
-│   ├── app/                # Main application logic
-│   ├── models/             # YOLO AI models and scripts
-│   ├── Dockerfile          # Docker configuration for backend
-│   └── requirements.txt    # Python dependencies
-├── mobile/                 # React Native mobile application
-│   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── screens/        # App screens
-│   │   ├── services/       # API integration services
-│   │   └── utils/          # Helper functions
-│   ├── package.json        # Node dependencies
-│   └── tailwind.config.js  # NativeWind configuration
-└── README.md               # Project documentation
+MathruCare/
+├── .github/workflows/      # CI for the chatbot backend
+├── maathru-care/           # Expo (React Native) app — see maathru-care/README.md
+└── chatbot/                # Mood-aware chatbot — see chatbot/README.md
+    ├── backend/            # Node.js/Express API
+    ├── services/           # Python services: fer, sentiment, fusion
+    ├── packages/fusion-core/
+    ├── ml/                 # Model development
+    └── docs/               # Chatbot documentation
 ```
+
+- App: [maathru-care/README.md](maathru-care/README.md)
+- Chatbot: [chatbot/README.md](chatbot/README.md)
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- Python (v3.9+)
-- Docker
-- React Native CLI / Expo CLI
+- Node.js
+- Docker (for the chatbot backend)
 - Git
 
 ### Installation & Setup
 
-1. **Clone the repository**
+1. **Run the app**
    ```bash
-   git clone https://github.com/your-org/maathru_care.git
-   cd maathru_care
-   ```
-
-2. **Backend Setup (FastAPI)**
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   pip install -r requirements.txt
-   uvicorn app.main:app --reload
-   ```
-
-3. **Frontend Setup (React Native)**
-   ```bash
-   cd ../mobile
+   cd maathru-care
    npm install
-   # For Expo:
-   npx expo start
-   # For React Native CLI:
-   npx react-native run-android # or run-ios
+   npm run web
    ```
+   Copy `maathru-care/.env.example` to `maathru-care/.env` first. See
+   [maathru-care/README.md](maathru-care/README.md).
 
-4. **Running with Docker (Recommended for Backend)**
+2. **Run the chatbot backend** (optional; the app works in mock mode without it)
    ```bash
-   cd backend
-   docker build -t maathru-backend .
-   docker run -p 8000:8000 maathru-backend
+   cd chatbot
+   cp .env.example .env   # then fill it in
+   docker compose up -d --build
+   docker compose exec -T backend node dist/db/migrate.js   # first run only
    ```
+   See [chatbot/README.md](chatbot/README.md).
+
+3. **Food-detection API (FastAPI/YOLO)** — maintained separately. Its URL is set in
+   `maathru-care/src/services/api/foodDetector.ts`.
 
 ---
 
@@ -123,6 +105,8 @@ maathru_care/
 | :--- | :--- | :--- | :--- | :--- |
 | `/health` | `GET` | System health check. | None | `{ "status": "ok" }` |
 | `/predict`| `POST` | AI Food Detection & Nutrition Inference. | `multipart/form-data` (Image) | JSON with bounding boxes & nutritional data |
+
+Chatbot endpoints are documented in [chatbot/README.md](chatbot/README.md).
 
 ---
 
@@ -140,6 +124,16 @@ maathru_care/
 3. **Cloud Infrastructure & CI/CD**: Architected automated continuous deployment pipelines using Docker, Render, and Choreo, incorporating robust health monitoring mechanisms.
 4. **Mobile Integration**: Built seamless, responsive React Native interfaces facilitating real-time camera capture, image upload, bounding-box visualization, and comprehensive nutritional summaries.
 
+### LIVERA S.D
+- **Student ID**: IT22638168
+- **Role**: Mood-aware Conversational Support Component
+
+#### Detailed Module Responsibilities:
+1. **Mood Models**: Facial expression recognition (MobileNetV2, TFLite) and Sinhala/English sentiment (SinBERT) models.
+2. **Fusion Engine**: Transparent late-fusion mood engine.
+3. **Chatbot Backend**: Node/Express chatbot backend with a deterministic safety layer and LLM integration.
+4. **App Integration**: Consent-based chat UI integrated into Maathru Care.
+
 ---
 
 ## 👥 Team Members
@@ -147,7 +141,7 @@ maathru_care/
 | Name | Student ID | Role / Module |
 | :--- | :--- | :--- |
 | NUWANTHA P.A.T. | IT22284716 | Lead AI & Computer Vision Integration / Full-Stack Mobile Engineer |
-| [Name 2] | [ID 2] | [Role 2] |
+| LIVERA S.D | IT22638168 | Mood-aware Conversational Support (Chatbot) |
 | [Name 3] | [ID 3] | [Role 3] |
 | [Name 4] | [ID 4] | [Role 4] |
 
