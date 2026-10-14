@@ -53,6 +53,15 @@ function Chat() {
   // in-use indicator). Detection runs in the background from here; the panel is just a viewport.
   const camera = useWebCamera(cameraEnabled);
   useEffect(() => { if (cameraEnabled) preloadBlazeFace(); }, [cameraEnabled]);
+  // Camera sensing only runs while the chat is open: tell the backend when it starts/stops with the screen.
+  useEffect(() => {
+    const s = useAppStore.getState();
+    if (s.cameraEnabled && !s.cameraPaused) setCameraActive(true).catch(() => {});
+    return () => {
+      const c = useAppStore.getState();
+      if (c.cameraEnabled && !c.cameraPaused) setCameraActive(false).catch(() => {});
+    };
+  }, []);
   // Raised = the resting mid-screen position shown before the user engages the composer.
   const raised = messages.length === 0 && !focused;
   // The idle line reserves room on the right for the send button; the moment the text fills it, the
