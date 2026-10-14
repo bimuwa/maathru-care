@@ -25,7 +25,7 @@ export const gdmRiskService = {
       'age', 'gestational_week', 'no_of_pregnancy', 'bmi',
       'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin'
     ];
-    
+
     for (const field of requiredFields) {
       if (profileData[field] === undefined || profileData[field] === null) {
         throw new Error(`Missing required clinical data: ${field}`);
@@ -53,22 +53,44 @@ export const gdmRiskService = {
       }
 
       const result = await response.json();
-      
-      // Determine risk category if the API doesn't provide it clearly, or map from API response
+
       let riskCategory: 'Low Risk' | 'Moderate Risk' | 'High Risk' = 'Low Risk';
       let message = 'Continue maintaining balanced meals and regular prenatal care.';
 
-      // Fallback categorization based on raw prediction value if no category is returned
-      if (result.prediction === 1) {
-         riskCategory = 'High Risk';
-         message = 'Please discuss this result with your healthcare professional for appropriate evaluation and guidance.';
-      } else if (result.prediction === 0) {
-         riskCategory = 'Low Risk';
-         message = 'Continue maintaining balanced meals and regular prenatal care.';
+      // Handle new API response format
+      if (result.success !== undefined) {
+        if (result.risk_level) {
+          riskCategory = result.risk_level;
+        } else if (result.diabetes_risk === true) {
+          riskCategory = 'High Risk';
+        }
+
+        if (result.recommendation) {
+          message = result.recommendation;
+        }
+
+        const probability = result.risk_percentage !== undefined
+          ? result.risk_percentage / 100
+          : (result.diabetes_risk ? 0.9 : 0.1);
+
+        return {
+          prediction: result.diabetes_risk ? 1 : 0,
+          probability,
+          riskCategory,
+          message
+        };
       }
 
-      // If the API returns a probability score, we can be more nuanced
-      if (result.probability) {
+      // Fallback for old format
+      if (result.prediction === 1) {
+        riskCategory = 'High Risk';
+        message = 'Please discuss this result with your healthcare professional for appropriate evaluation and guidance.';
+      } else if (result.prediction === 0) {
+        riskCategory = 'Low Risk';
+        message = 'Continue maintaining balanced meals and regular prenatal care.';
+      }
+
+      if (result.probability !== undefined) {
         if (result.probability >= 0.7) {
           riskCategory = 'High Risk';
           message = 'Please discuss this result with your healthcare professional for appropriate evaluation and guidance.';
@@ -79,7 +101,7 @@ export const gdmRiskService = {
       }
 
       return {
-        prediction: result.prediction,
+        prediction: result.prediction !== undefined ? result.prediction : (riskCategory === 'High Risk' ? 1 : 0),
         probability: result.probability,
         riskCategory,
         message
@@ -87,11 +109,11 @@ export const gdmRiskService = {
 
     } catch (error: any) {
       console.error('Error assessing GDM risk:', error);
-      
+
       if (error.name === 'AbortError') {
-         throw new Error('The risk assessment service took too long to respond. Please try again.');
+        throw new Error('The risk assessment service took too long to respond. Please try again.');
       }
-      
+
       throw new Error('Unable to complete risk assessment right now. Please try again later.');
     }
   }

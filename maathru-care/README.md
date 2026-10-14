@@ -1,56 +1,114 @@
-# Welcome to your Expo app 👋
+# Maathru Care — Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Maathru Care is a maternal-care app built with Expo (React Native) for two roles:
 
-## Get started
+- **Mothers** — track pregnancy health, nutrition and wellbeing.
+- **Doctors** — follow their patients, review alerts and chat with mothers.
 
-1. Install dependencies
+It runs on Android, iOS and the web from one codebase.
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+**Mother** (`src/app/(mother)`)
 
-   ```bash
-   npx expo start
-   ```
+- **Home** — estimated due date, current risk level, quick actions, assigned doctor and an SOS alert to the doctor.
+- **Meal Scan** — photograph a meal; a food-detection API identifies the items and the meal is logged with its nutrients.
+- **GDM Care** — diet and exercise guidance for gestational diabetes.
+- **Wellness** — daily symptom log.
+- **Vitals, Medications, AI risk assessment and risk trends** — opened from the home quick actions.
+- **Profile**, plus a chat with the assigned doctor.
+- **Support chatbot** — a mood-aware Sinhala/English chatbot (see [Chatbot](#chatbot)).
 
-In the output, you'll find options to open the app in a
+New mother accounts wait for doctor approval (`pending-approval` screen).
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+**Doctor** (`src/app/(doctor)`)
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- **Dashboard**, **Patients** (with patient detail), **Alerts** and **Chat**.
 
-## Get a fresh project
+## Tech stack
 
-When you're ready, run:
+| Area | Library | Version |
+|---|---|---|
+| Framework | Expo SDK | ~57.0.18 |
+| UI runtime | React Native / React | 0.86.3 / 19.2.3 |
+| Routing | expo-router | ~57.0.17 |
+| Styling | NativeWind (Tailwind CSS) | ^4.2.6 (Tailwind ^3.4.19) |
+| Auth and data | @supabase/supabase-js | ^2.112.4 |
+| State | Zustand | ^5.0.15 |
+| Face detection (chatbot, web) | @tensorflow/tfjs + blazeface | ^4.22.0 / ^0.1.0 |
+| Language | TypeScript | ~6.0.3 |
 
-```bash
-npm run reset-project
+## Getting started
+
+No Node version is pinned; use a current LTS release.
+
+```sh
+npm install
+cp .env.example .env      # then fill in the values
+npm run web               # or: npm start (Expo dev server), npm run android, npm run ios
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Environment variables
 
-### Other setup steps
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | yes | — | Supabase project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | yes | — | Supabase anon (public) key |
+| `EXPO_PUBLIC_CHATBOT_API_MODE` | no | `mock` | `live` calls the chatbot backend; `mock` uses built-in replies |
+| `EXPO_PUBLIC_CHATBOT_API_BASE_URL` | no | `http://localhost:3000` | Chatbot backend URL |
+| `EXPO_PUBLIC_FER_JPEG_QUALITY` | no | `90` | JPEG quality of camera frames sent for mood sensing |
+| `EXPO_PUBLIC_FER_SAMPLE_MS` | no | `3000` | Interval between camera frames, in ms |
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+The chatbot defaults come from `src/features/chatbot/config.ts`.
 
-## Learn more
+## Authentication
 
-To learn more about developing your project with Expo, look at the following resources:
+Sign-up and login use Supabase Auth with email and password. Each account has a profile row in
+`public.users` linked to the auth user by `auth_user_id`. The schema change is in
+`supabase/migrations/` — run it once in the Supabase SQL Editor.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Backends
 
-## Join the community
+- **Supabase** — authentication, user profiles and meal logs.
+- **Team REST API** — risk prediction, symptoms, vitals, alerts, prescriptions, doctor and chat
+  endpoints. Set its base URL in `src/services/api.ts`.
+- **Food-detection API** — used by Meal Scan; its URL is set in `src/services/api/foodDetector.ts`.
+- **Mood-aware chatbot backend** — lives in [`../chatbot`](../chatbot/README.md). Mock mode works
+  without it.
 
-Join our community of developers creating universal apps.
+## Project structure
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/
+├── app/                 expo-router routes
+│   ├── (mother)/        mother tabs
+│   ├── (doctor)/        doctor tabs
+│   └── chatbot.tsx      chatbot route
+├── components/          shared UI components (ui/ for meal-scan widgets)
+├── constants/           theme, nutrition targets, user config
+├── context/             AuthContext (Supabase session and profile)
+├── features/chatbot/    chatbot screen, API client, mock API, camera vision
+├── hooks/               colour-scheme and theme hooks
+├── lib/                 Supabase client
+├── screens/             larger screens used by the routes
+├── services/            REST API, meal, GDM and food-detection services
+└── types/               database and domain types
+supabase/
+└── migrations/          SQL migrations
+```
+
+## Chatbot
+
+The pink chat button on the mother home page opens `/chatbot`. On open, a privacy-consent popup
+asks whether to enable camera mood sensing. The camera is used only while the chat screen is open,
+and only on the web. With `EXPO_PUBLIC_CHATBOT_API_MODE=live`, messages and camera frames go to the
+chatbot backend; see [`../chatbot/README.md`](../chatbot/README.md) to run it.
+
+## Scripts
+
+| Command | Action |
+|---|---|
+| `npm start` | Expo dev server |
+| `npm run web` | Run in the browser |
+| `npm run android` / `npm run ios` | Run on a device or emulator |
+| `npm run lint` | Expo lint |

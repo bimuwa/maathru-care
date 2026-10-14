@@ -6,14 +6,17 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { UtensilsCrossed, X, Sparkles } from 'lucide-react-native';
+import { UtensilsCrossed, X, Sparkles, Camera } from 'lucide-react-native';
 import { MealItem } from '@/types/meal';
 import { NutritionMiniBar } from './NutritionMiniBar';
+import { QuantityEditModal } from './QuantityEditModal';
+import { useState } from 'react';
 
 interface MealPlateCardProps {
   items: MealItem[];
   mealType: string;
   onRemoveItem: (id: string) => void;
+  onUpdateQuantity: (id: string, qty: number) => void;
 }
 
 /** Returns computed nutrition totals across all items */
@@ -35,10 +38,12 @@ function computeTotals(items: MealItem[]) {
 function MealItemChip({
   item,
   onRemove,
+  onPressQuantity,
   animDelay,
 }: {
   item: MealItem;
   onRemove: () => void;
+  onPressQuantity: () => void;
   animDelay: number;
 }) {
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -125,6 +130,23 @@ function MealItemChip({
         {formattedName}
       </Text>
 
+      {/* Quantity Badge */}
+      <TouchableOpacity
+        onPress={onPressQuantity}
+        activeOpacity={0.7}
+        style={{
+          marginLeft: 4,
+          paddingHorizontal: 6,
+          paddingVertical: 2,
+          backgroundColor: '#D1FAE5',
+          borderRadius: 10,
+        }}
+      >
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#059669' }}>
+          x{item.servingMultiplier}
+        </Text>
+      </TouchableOpacity>
+
       <TouchableOpacity
         onPress={onRemove}
         style={{
@@ -159,7 +181,8 @@ function ImageFan({ items }: { items: MealItem[] }) {
         flexDirection: 'row',
         height: SIZE,
         width: SIZE + (withImages.length - 1) * (SIZE - OVERLAP),
-        marginBottom: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
       }}
     >
       {withImages.map((item, idx) => (
@@ -214,7 +237,8 @@ function ImageFan({ items }: { items: MealItem[] }) {
   );
 }
 
-export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardProps) {
+export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity }: MealPlateCardProps) {
+  const [editingItem, setEditingItem] = useState<MealItem | null>(null);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   // Pulse the card when an item is added
@@ -249,77 +273,93 @@ export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardPr
         borderRadius: 24,
         backgroundColor: '#FFFFFF',
         borderWidth: 1.5,
-        borderColor: '#A7F3D0',
-        shadowColor: '#059669',
+        borderColor: '#E2E8F0',
+        shadowColor: '#94A3B8',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.10,
+        shadowOpacity: 0.12,
         shadowRadius: 16,
         elevation: 5,
         overflow: 'hidden',
       }}
     >
-      {/* Card Header */}
+      {/* Card Header - Just Title */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 20,
-          paddingTop: 18,
-          paddingBottom: 14,
-          borderBottomWidth: items.length > 0 ? 1 : 0,
-          borderBottomColor: '#F0FDF4',
+          justifyContent: 'center',
+          paddingTop: 20,
+          paddingBottom: 8,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 24, marginRight: 10 }}>🍽️</Text>
-          <View>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>
-              {mealType} Plate
-            </Text>
+        <Text style={{ fontFamily: 'serif', fontSize: 22, fontWeight: '600', color: '#334155', letterSpacing: 0.2 }}>
+          {mealType} Plate
+        </Text>
+      </View>
+
+      {/* Real Plate Visual */}
+      <View style={{ alignItems: 'center', marginVertical: 12 }}>
+        <View
+          style={{
+            width: 210,
+            height: 210,
+            borderRadius: 105,
+            backgroundColor: '#FFFFFF',
+            borderWidth: 14,
+            borderColor: '#F8FAFC', // Outer rim of the plate
+            shadowColor: '#94A3B8',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.15,
+            shadowRadius: 16,
+            elevation: 8,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          {/* Inner rim line */}
+          <View
+            style={{
+              width: 146,
+              height: 146,
+              borderRadius: 73,
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
             {items.length === 0 ? (
-              <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 1 }}>
-                Scan food items to fill your plate
-              </Text>
+              <View style={{ alignItems: 'center' }}>
+                <UtensilsCrossed size={32} color="#CBD5E1" strokeWidth={1.5} />
+                <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 8, fontWeight: '500' }}>Empty Plate</Text>
+              </View>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                <Sparkles size={11} color="#059669" />
-                <Text style={{ fontSize: 12, color: '#059669', fontWeight: '600', marginLeft: 4 }}>
-                  {items.length} {items.length === 1 ? 'item' : 'items'} added
-                </Text>
+              <View style={{ transform: [{ scale: 1.15 }] }}>
+                <ImageFan items={items} />
               </View>
             )}
           </View>
         </View>
-
-        {/* Image fan (top-right) */}
-        {items.length > 0 && <ImageFan items={items} />}
       </View>
 
-      {/* Empty State */}
-      {items.length === 0 && (
-        <View style={{ alignItems: 'center', paddingVertical: 28, paddingHorizontal: 24 }}>
-          <View
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 32,
-              backgroundColor: '#F0FDF4',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 12,
-            }}
-          >
-            <UtensilsCrossed size={28} color="#A7F3D0" strokeWidth={1.5} />
+      {/* Subtitle / Item Count */}
+      <View style={{ alignItems: 'center', marginBottom: 4 }}>
+        {items.length === 0 ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', marginRight: 6 }}>
+              Use the camera below to scan food
+            </Text>
+            <Camera size={14} color="#94A3B8" />
           </View>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: '#64748B', textAlign: 'center' }}>
-            Your plate is empty
-          </Text>
-          <Text style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', marginTop: 4 }}>
-            Use the camera below to scan your first food item 📷
-          </Text>
-        </View>
-      )}
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Sparkles size={13} color="#059669" />
+            <Text style={{ fontSize: 13, color: '#059669', fontWeight: '600', marginLeft: 6 }}>
+              {items.length} {items.length === 1 ? 'item' : 'items'} on plate
+            </Text>
+          </View>
+        )}
+      </View>
 
       {/* Food chips */}
       {items.length > 0 && (
@@ -331,6 +371,7 @@ export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardPr
                 key={item.id}
                 item={item}
                 onRemove={() => onRemoveItem(item.id)}
+                onPressQuantity={() => setEditingItem(item)}
                 animDelay={0}
               />
             ))}
@@ -354,6 +395,20 @@ export function MealPlateCard({ items, mealType, onRemoveItem }: MealPlateCardPr
         >
           <NutritionMiniBar totals={totals} />
         </View>
+      )}
+
+      {/* Edit Quantity Modal */}
+      {editingItem && (
+        <QuantityEditModal
+          visible={!!editingItem}
+          foodName={editingItem.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+          initialQuantity={editingItem.servingMultiplier}
+          onSave={(newQty) => {
+            onUpdateQuantity(editingItem.id, newQty);
+            setEditingItem(null);
+          }}
+          onCancel={() => setEditingItem(null)}
+        />
       )}
     </Animated.View>
   );
