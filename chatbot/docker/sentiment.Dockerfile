@@ -1,10 +1,10 @@
 # MaternaLink sentiment service image.
 #
-# Placed OUTSIDE dev/sentiment-service/ deliberately — that directory is a
+# Placed OUTSIDE services/sentiment/ deliberately — that directory is a
 # certified artifact (B1/B2-A) and is never modified, not even to add a
 # Dockerfile inside it. This file only copies from it.
 #
-# The 127.0.0.1 bind trap (dev/sentiment-service/app.py:195) is solved here,
+# The 127.0.0.1 bind trap (services/sentiment/app.py:195) is solved here,
 # in CMD, by invoking the uvicorn CLI directly — that never executes the
 # `if __name__ == "__main__"` block in app.py, so app.py is untouched.
 #
@@ -81,8 +81,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY dev/sentiment-service/b1-constraints.txt ./b1-constraints.txt
-COPY dev/sentiment-service/requirements.txt ./requirements.txt
+COPY services/sentiment/b1-constraints.txt ./b1-constraints.txt
+COPY services/sentiment/requirements.txt ./requirements.txt
 
 # torch from the CPU index — omitting --index-url pulls the multi-gigabyte CUDA
 # build, which is not what B1 certified.
@@ -103,8 +103,8 @@ assert numpy.__version__ == '2.4.6', f'numpy {numpy.__version__} != 2.4.6'; \
 print('pin assertion OK:', torch.__version__, transformers.__version__, tokenizers.__version__, numpy.__version__)"
 
 # Application source — certified, unmodified.
-COPY dev/sentiment-service/app.py ./app.py
-COPY dev/sentiment-service/sentiment_service ./sentiment_service
+COPY services/sentiment/app.py ./app.py
+COPY services/sentiment/sentiment_service ./sentiment_service
 
 # The checkpoint (4 files — weights without tokenizer.json will not load).
 #

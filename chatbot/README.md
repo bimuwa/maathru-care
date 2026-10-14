@@ -49,14 +49,14 @@ they are never stored.
 
 | Path | Contents |
 |---|---|
-| `dev/backend/` | Node/TypeScript API: chat orchestration, safety layer, LLM, migrations |
-| `dev/fer-service/` | Facial-expression recognition service (TFLite MobileNetV2) |
-| `dev/sentiment-service/` | Sinhala/English text mood service |
-| `dev/fusion-service/` | HTTP wrapper around the fusion engine |
-| `dev/fusion/` | Late-fusion engine library and tests |
-| `dev/fer-hf-model-repo/` | FER model publishing scripts (Hugging Face) |
-| `dev/fer-hf-keras-archive/` | FER Keras checkpoint archive scripts |
-| `dev/sentiment-hf-archive/` | Sentiment checkpoint archive scripts |
+| `backend/` | Node/TypeScript API: chat orchestration, safety layer, LLM, migrations |
+| `services/fer/` | Facial-expression recognition service (TFLite MobileNetV2) |
+| `services/sentiment/` | Sinhala/English text mood service |
+| `services/fusion/` | HTTP wrapper around the fusion engine |
+| `packages/fusion-core/` | Late-fusion engine library and tests |
+| `tools/huggingface/fer-model-repo/` | FER model publishing scripts (Hugging Face) |
+| `tools/huggingface/fer-keras-archive/` | FER Keras checkpoint archive scripts |
+| `tools/huggingface/sentiment-archive/` | Sentiment checkpoint archive scripts |
 | `ml/` | Model development notebooks and run records (`ml/sentiment/outputs` is used by the sentiment image) |
 | `docker/` | Dockerfiles for fer, sentiment and fusion |
 | `docs/system/` | Architecture, mood states, safety policy, performance |
@@ -94,6 +94,13 @@ Set these in the maathru-care environment:
 ```sh
 EXPO_PUBLIC_CHATBOT_API_MODE=live        # or mock
 EXPO_PUBLIC_CHATBOT_API_BASE_URL=http://localhost:3000
+```
+
+### Local checks
+
+```sh
+cd backend && npm ci && npm run typecheck && npm run typecheck:test && npm run lint
+python -m pytest packages/fusion-core/tests/test_b4_contract.py -v   # from chatbot/
 ```
 
 Backend CI runs from the repo root: `.github/workflows/chatbot-backend-ci.yml`.

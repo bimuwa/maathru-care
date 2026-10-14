@@ -3,11 +3,11 @@ name: chatbot-backend-ci
 on:
   push:
     paths:
-      - "chatbot/dev/backend/**"
+      - "chatbot/backend/**"
       - ".github/workflows/chatbot-backend-ci.yml"
   pull_request:
     paths:
-      - "chatbot/dev/backend/**"
+      - "chatbot/backend/**"
       - ".github/workflows/chatbot-backend-ci.yml"
 
 jobs:
@@ -15,14 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: chatbot/dev/backend
+        working-directory: chatbot/backend
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: chatbot/dev/backend/package-lock.json
+          cache-dependency-path: chatbot/backend/package-lock.json
       - run: npm ci
       - run: npm run typecheck
 
