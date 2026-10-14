@@ -71,12 +71,10 @@ metrics and plots.
 ## What does NOT belong here
 
 - Specifications and decisions → `../docs/`
-- Application code → `../dev/`
-- Cross-model consolidated comparisons → `../experiments/`
+- Application code → `../backend/`, `../services/`, `../packages/`
 
-> The distinction between `ml/*/outputs/` and `experiments/`: `outputs/` holds results for
-> **one model**. `experiments/` holds comparisons **across models** — the face-only vs
-> text-only vs face+text ablation lives there.
+> `ml/*/outputs/` holds results for **one model**. Comparisons **across models** — the
+> face-only vs text-only vs face+text ablation — belong under `ml/fusion/outputs/`.
 
 ## Current status
 

@@ -4,7 +4,7 @@
 
 _Last updated: 2026-08-19 (repository restructure; Gate 1A closed)_
 
-Supersedes `PROJECT_STATUS.md`, archived at `../archive/PROJECT_STATUS_superseded_2026-08-19.md`.
+Supersedes `PROJECT_STATUS.md` (removed; see git history).
 
 ---
 
@@ -127,7 +127,7 @@ Questions the design leaves open for evidence to answer.
 
 1. **No invented values.** No accuracy, latency, threshold or weight may be written without
    a measurement. Use `TBD` with the producing phase.
-2. **Nothing is deleted.** Superseded documents move to `../archive/` and are marked.
+2. **Superseded documents are removed.** They stay available in git history.
 3. **Formal decisions are separate documents** in `../decisions/` and are never merged away.
 4. **Behavioural signals stay out of fusion** unless a new memo reverses decision 2.
 5. **No human participant contact** before SLIIT IERC approval.

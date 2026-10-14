@@ -79,6 +79,12 @@ they are never stored.
    ```
 4. Health check: <http://localhost:3000/health>
 
+**Sentiment model download.** The sentiment image downloads its checkpoint from the public
+Hugging Face repo `mykkularathne/maternalink-sinbert-mood3-archive` at build time and
+verifies its SHA-256, so `docker compose build sentiment` needs network access but no token.
+If the repo is ever made private again, build with
+`docker compose build --build-arg HF_TOKEN=<token> sentiment` (never commit the token).
+
 | Service | Port |
 |---|---|
 | backend | 3000 |

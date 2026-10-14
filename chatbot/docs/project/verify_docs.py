@@ -70,7 +70,7 @@ fail += bool(bad)
 # 5. Required documents exist.
 expect = [
     "README.md",
-    "docs/README.md", "docs/archive/README.md",
+    "docs/README.md",
     "docs/project/PROJECT_CONTROL.md", "docs/project/BUILD_PLAN.md",
     "docs/project/REQUIREMENTS.md", "docs/project/PHASE_1_CLOSURE.md",
     "docs/project/DOCUMENT_REGISTER.md",
@@ -80,7 +80,8 @@ expect = [
     "docs/decisions/LOCAL_STORAGE_DECISION.md",
     "docs/research/LITERATURE_REVIEW.md",
     "ml/README.md", "ml/fer/README.md", "ml/sentiment/README.md",
-    "dev/README.md", "experiments/README.md",
+    "backend/README.md", "services/fer/README.md", "services/fusion/README.md",
+    "packages/fusion-core/README.md",
 ]
 gone = [e for e in expect if not os.path.exists(os.path.join(ROOT, e.replace("/", os.sep)))]
 print(f"[{'FAIL' if gone else 'PASS'}] required documents present: {gone or f'all {len(expect)}'}")
@@ -95,7 +96,7 @@ fail += bool(ms)
 
 # 7. No references to the pre-2026-08-19 folder structure outside the archive.
 # Match old *paths* (folder followed by a separator), not archived filenames that merely
-# contain the old folder name, e.g. `00_PROJECT_CONTROL_README.md` in docs/archive/.
+# contain the old folder name, e.g. `00_PROJECT_CONTROL_README.md` (formerly in docs/archive/).
 OLD = re.compile(r"(00_PROJECT_CONTROL|01_PROPOSAL|02_LITERATURE_REVIEW|03_SYSTEM_DESIGN"
                  r"|99_ARCHIVE|04_DATA|05_ML_MODELS|06_MOBILE_APP|07_BACKEND|08_INTEGRATION"
                  r"|09_RESEARCH_EXPERIMENTS|10_TESTING|11_FINAL_DOCUMENTATION)/")
@@ -108,17 +109,17 @@ print(f"[{'FAIL' if stale else 'PASS'}] no stale folder refs: {stale or 'clean'}
 fail += bool(stale)
 
 # 8. Every main folder has a README.
-mains = ["docs", "ml", "dev", "experiments", "ml/fer", "ml/sentiment", "docs/archive"]
+mains = ["docs", "ml", "backend", "packages/fusion-core", "ml/fer", "ml/sentiment"]
 noreadme = [m for m in mains
             if not os.path.exists(os.path.join(ROOT, m.replace("/", os.sep), "README.md"))]
 print(f"[{'FAIL' if noreadme else 'PASS'}] folder READMEs: {noreadme or 'all present'}")
 fail += bool(noreadme)
 
-# 9. Exactly four top-level working folders.
+# 9. Expected top-level working folders.
 tops = sorted(d for d in os.listdir(ROOT)
               if os.path.isdir(os.path.join(ROOT, d)) and not d.startswith("."))
-ok = tops == ["dev", "docs", "experiments", "ml"]
-print(f"[{'PASS' if ok else 'FAIL'}] four top-level folders: {tops}")
+ok = tops == ["backend", "docker", "docs", "ml", "packages", "services", "tools"]
+print(f"[{'PASS' if ok else 'FAIL'}] top-level folders: {tops}")
 fail += (not ok)
 
 print("\nRESULT:", "ALL CHECKS PASSED" if not fail else f"{fail} CHECK(S) FAILED")

@@ -79,23 +79,23 @@ Decision memos are **never merged**. Each records an actual project decision.
 | `MEDICAL_KNOWLEDGE_BASE_DECISION.md` | No medical knowledge base, no RAG. The chatbot is emotional support only; factual questions are redirected to a health professional. Information provision belongs to teammates' clinical/nutrition components. | **AUTHORITATIVE** — DECIDED (rejected) |
 | `LOCAL_STORAGE_DECISION.md` | Entity tiering T0–T3; reconciles the AsyncStorage contradiction | Tiering **PROPOSED**; technology **UNRESOLVED** — due before Phase 5 |
 
-## docs/archive/ — retained, not active
+## Former docs/archive/ — removed
 
-Nothing here is current. Nothing was deleted.
+These files were archived, then removed. All are in git history.
 
-| Document | Why archived |
-|---|---|
-| `Proposal_Package_ORIGINAL_March2026.docx` / `.pdf` | Original proposal, superseded by the revised proposal after the literature review |
-| `PROJECT_STATUS_superseded_2026-08-19.md` | Superseded by `../project/PROJECT_CONTROL.md` |
-| `00_PROJECT_CONTROL_README.md` | Folder guide for a folder that no longer exists after restructure |
-| `PROPOSAL_original_NOTE.md` | Pointer note to the archived original proposal; now redundant |
-| `Literature_Review_Master_Plan_DUPLICATE.docx` | Byte-identical duplicate of the canonical master plan |
-| `Paper_Extraction_Sheet_SOURCE_COPY_DUPLICATE.xlsx` | Byte-identical duplicate of the blank template |
-| `Paper_Extraction_Sheet_BLANK_TEMPLATE.xlsx` | Empty template preceding the completed 49-record sheet |
-| `IT22638168_Literature_Review_Package.zip` | Original release bundle; contents extracted and distributed |
-| `IT22638168_Updated_Proposal_Package.zip` | Original release bundle; contents extracted and distributed |
-| `Updated_Proposal_Package_README.txt` | Original package manifest; content folded into the root README |
-| `note_EMPTY.ipynb` | Empty 0-byte notebook from the repository root |
+| Document | Why archived | Status |
+|---|---|---|
+| `Proposal_Package_ORIGINAL_March2026.docx` / `.pdf` | Original proposal, superseded by the revised proposal after the literature review | Removed — in git history |
+| `PROJECT_STATUS_superseded_2026-08-19.md` | Superseded by `../project/PROJECT_CONTROL.md` | Removed — in git history |
+| `00_PROJECT_CONTROL_README.md` | Folder guide for a folder that no longer exists after restructure | Removed — in git history |
+| `PROPOSAL_original_NOTE.md` | Pointer note to the archived original proposal; now redundant | Removed — in git history |
+| `Literature_Review_Master_Plan_DUPLICATE.docx` | Byte-identical duplicate of the canonical master plan | Removed — in git history |
+| `Paper_Extraction_Sheet_SOURCE_COPY_DUPLICATE.xlsx` | Byte-identical duplicate of the blank template | Removed — in git history |
+| `Paper_Extraction_Sheet_BLANK_TEMPLATE.xlsx` | Empty template preceding the completed 49-record sheet | Removed — in git history |
+| `IT22638168_Literature_Review_Package.zip` | Original release bundle; contents extracted and distributed | Removed — in git history |
+| `IT22638168_Updated_Proposal_Package.zip` | Original release bundle; contents extracted and distributed | Removed — in git history |
+| `Updated_Proposal_Package_README.txt` | Original package manifest; content folded into the root README | Removed — in git history |
+| `note_EMPTY.ipynb` | Empty 0-byte notebook from the repository root | Removed — in git history |
 
 ## Code and workspace folders
 
@@ -103,9 +103,13 @@ Nothing here is current. Nothing was deleted.
 |---|---|---|
 | `ml/fer/` | FER development — notebooks 01–08, data, models, plots, outputs | **ACTIVE** — Phase 2 |
 | `ml/sentiment/` | Text mood development | Scaffold — later phase |
-| `dev/backend/` | API, chatbot orchestration, safety layer | Empty scaffold — Phase 6 |
-| `dev/frontend/` | Mobile UI, camera, chat | Empty scaffold — Phase 5 |
-| `experiments/` | Cross-model consolidated results and reports | Empty — no results exist |
+| `backend/` | API, chatbot orchestration, safety layer, LLM | Active |
+| `services/fer/`, `services/sentiment/`, `services/fusion/` | FER, text mood and fusion services | Active |
+| `packages/fusion-core/` | Late-fusion engine library | Active |
+| `tools/huggingface/` | Model publishing and archive scripts | Active |
+| `maathru-care/src/features/chatbot/` | Chat UI, camera, mobile/web client (in the mother app) | Active |
+| former `dev/frontend/` | Standalone frontend | Removed — in git history |
+| former `experiments/` | Cross-model results scaffold (never populated) | Removed — in git history |
 
 ## Restructure record — 2026-08-19
 
@@ -121,7 +125,7 @@ Nothing here is current. Nothing was deleted.
 ## Rules
 
 1. Every new document is added to this register.
-2. Superseded documents move to `docs/archive/` and are recorded above — never deleted.
+2. Superseded documents are removed and recorded above; they stay in git history.
 3. Formal decision memos remain separate documents.
 4. Where a binary is authoritative, its Markdown mirror must be regenerated if the binary
    changes, or the two will disagree.

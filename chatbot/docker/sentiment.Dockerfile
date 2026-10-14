@@ -54,8 +54,9 @@ ARG HF_TOKEN
 
 # model.safetensors (266 MB) is NOT committed (*.safetensors is gitignored
 # project-wide) and does not exist on a fresh clone (Railway or otherwise) —
-# fetched here from the PRIVATE Hugging Face archive
-# mykkularathne/maternalink-sinbert-mood3-archive.
+# fetched here from the Hugging Face archive
+# mykkularathne/maternalink-sinbert-mood3-archive (public; HF_TOKEN is only
+# needed if it is made private again).
 RUN curl -fsSL \
         -H "Authorization: Bearer ${HF_TOKEN}" \
         -o model.safetensors \

@@ -13,7 +13,8 @@ All project documentation lives here. Nothing outside `docs/` is documentation.
 ## Purpose
 
 This folder holds the authoritative record of **what is being built, why, and what has been
-decided**. Code lives in `ml/` and `dev/`; results live in `experiments/`.
+decided**. Code lives in `backend/`, `services/`, `packages/` and `ml/`; per-model results
+live in `ml/*/outputs/`.
 
 ## Structure
 
@@ -57,8 +58,8 @@ Read these four and you understand the project:
 
 ## What does NOT belong here
 
-- Code, notebooks, models, datasets → `ml/` or `dev/`
-- Experiment results and metrics → `experiments/` or `ml/*/outputs/`
+- Code, notebooks, models, datasets → `ml/`, `backend/`, `services/` or `packages/`
+- Experiment results and metrics → `ml/*/outputs/`
 - Trained model files → `ml/*/models/`
 
 ## Markdown mirrors — read these, not the binaries
@@ -82,7 +83,7 @@ If you edit a mirror, update its source too — or the two will disagree.
 
 1. **Formal decisions stay separate.** Decision memos in `decisions/` are individual
    records and are never merged into other documents.
-2. **Nothing is deleted.** Superseded material moves to `archive/` and is marked.
+2. **Superseded material is removed.** It stays available in git history.
 3. **No invented values.** Where a number is not yet measured, write `TBD` with the phase
    that will produce it.
 4. **Do not add folders per document.** Related documents live side by side in one of the

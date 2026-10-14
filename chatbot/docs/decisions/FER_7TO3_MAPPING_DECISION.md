@@ -306,10 +306,10 @@ threshold, and no Phase 7 parameter**, and makes **no claim that fusion is valid
 
 ## A1.9 Required changes
 
-1. `dev/fusion/fusion/contract.py` — permit `predicted_state != argmax(scores)` for **face**
+1. `packages/fusion-core/fusion/contract.py` — permit `predicted_state != argmax(scores)` for **face**
    evidence; keep enforcing it for **text**.
-2. `dev/fusion/fusion/fusion.py` — single-modality passthrough must return the modality's
+2. `packages/fusion-core/fusion/fusion.py` — single-modality passthrough must return the modality's
    `predicted_state` instead of re-deriving it with `argmax_state(scores)`. `scores` still pass
    through unchanged (§A6).
-3. `dev/fusion/tests/` — new conformance tests for the exemption, for text still being rejected
+3. `packages/fusion-core/tests/` — new conformance tests for the exemption, for text still being rejected
    on divergence, and for the **A1.4 face-only invariant**.

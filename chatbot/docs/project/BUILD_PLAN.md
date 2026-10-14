@@ -1064,62 +1064,34 @@ System benchmarks
 
 ------------------------------------------------------------------------
 
-# 15. Suggested Repository Structure
+# 15. Repository Structure
 
 ``` text
-IT22638168/
+chatbot/
 │
-├── mobile/
-│   ├── app/
-│   ├── components/
-│   ├── screens/
-│   ├── services/
-│   ├── storage/
-│   ├── models/
-│   └── assets/
-│
-├── backend/
-│   ├── src/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   ├── models/
-│   │   ├── safety/
-│   │   └── config/
-│   └── tests/
-│
+├── backend/              Node/TypeScript API, safety layer, LLM, migrations
+├── services/
+│   ├── fer/              Facial-expression recognition (TFLite)
+│   ├── sentiment/        Sinhala text mood
+│   └── fusion/           HTTP wrapper over fusion-core
+├── packages/
+│   └── fusion-core/      Late-fusion engine library
+├── tools/
+│   └── huggingface/      Model publishing and archive scripts
+├── docker/               Dockerfiles for fer, sentiment, fusion
+├── docker-compose.yml
 ├── ml/
 │   ├── fer/
-│   │   ├── data/
-│   │   ├── notebooks/
-│   │   ├── training/
-│   │   ├── evaluation/
-│   │   └── export/
-│   │
-│   ├── text/
-│   │   ├── data/
-│   │   ├── training/
-│   │   └── evaluation/
-│   │
+│   ├── sentiment/
 │   └── fusion/
-│       ├── experiments/
-│       ├── evaluation/
-│       └── inference/
-│
-├── research/
-│   ├── literature/
-│   ├── datasets/
-│   ├── experiments/
-│   ├── results/
-│   └── analysis/
-│
 ├── docs/
-│   ├── architecture/
-│   ├── api/
-│   ├── privacy/
-│   ├── safety/
-│   └── deployment/
-│
+│   ├── project/
+│   ├── research/
+│   ├── system/
+│   └── decisions/
 └── README.md
+
+Chat UI: maathru-care/src/features/chatbot/ (outside chatbot/)
 ```
 
 ------------------------------------------------------------------------
