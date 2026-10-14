@@ -33,11 +33,9 @@ export const gdmV4ResearchService = {
    * Submit validated 5-feature vector to GDM V4 Research Screening API.
    *
    * @param request The 5 exact features (Age, No of Pregnancy, Family History, Unexplained Prenatal Loss, Sedentary Lifestyle)
-   * @param authToken Research access key issued by the study administrator
    */
   async predictScreening(
-    request: GDMV4RiskRequest,
-    authToken?: string
+    request: GDMV4RiskRequest
   ): Promise<GDMV4RiskResponse> {
     // 1. Strict client-side validation
     if (!Number.isFinite(request.age) || request.age < 10 || request.age > 70) {
@@ -55,9 +53,6 @@ export const gdmV4ResearchService = {
     if (request.sedentary_lifestyle !== 0 && request.sedentary_lifestyle !== 1) {
       throw new GDMV4ResearchError('Sedentary lifestyle must be explicitly specified (Yes or No).');
     }
-    if (!authToken?.trim()) {
-      throw new GDMV4ResearchError('Enter the research access key issued by your study administrator.', 401);
-    }
 
     // 2. Network request with a cold-start-tolerant timeout
     const controller = new AbortController();
@@ -67,9 +62,6 @@ export const gdmV4ResearchService = {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (authToken) {
-        headers['X-Research-Key'] = authToken.trim();
-      }
 
       const response = await fetch(GDM_V4_API_URL, {
         method: 'POST',
@@ -91,7 +83,7 @@ export const gdmV4ResearchService = {
         }
         if (response.status === 401) {
           throw new GDMV4ResearchError(
-            'The research access key is invalid. Please contact your study administrator.',
+            'The research service rejected this request. Please contact your administrator.',
             401
           );
         }

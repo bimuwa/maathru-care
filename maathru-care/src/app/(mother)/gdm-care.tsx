@@ -307,7 +307,6 @@ export default function WellnessScreen() {
     sedentary_lifestyle: null,
   });
   const [v4Loading, setV4Loading] = useState(false);
-  const [v4ResearchKey, setV4ResearchKey] = useState('');
   const [v4Error, setV4Error] = useState<string | null>(null);
   const [v4Result, setV4Result] = useState<GDMV4RiskResponse | null>(null);
 
@@ -379,7 +378,7 @@ export default function WellnessScreen() {
         family_history: v4Form.family_history === 'yes' ? 1 : 0,
         unexplained_prenatal_loss: v4Form.unexplained_prenatal_loss === 'yes' ? 1 : 0,
         sedentary_lifestyle: v4Form.sedentary_lifestyle === 'yes' ? 1 : 0,
-      }, v4ResearchKey);
+      });
 
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setV4Result(res);
@@ -932,19 +931,6 @@ export default function WellnessScreen() {
               ) : (
                 // ─── Form View ───────────────────────────────────────────────
                 <View style={s.v4FormContainer}>
-                  <View style={s.v4FormGroup}>
-                    <Text style={s.v4Label}>Research access key</Text>
-                    <Text style={s.v4SubLabel}>Use the key issued by your study administrator. It is kept only for this screen session.</Text>
-                    <TextInput
-                      style={s.v4Input}
-                      value={v4ResearchKey}
-                      onChangeText={setV4ResearchKey}
-                      secureTextEntry
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      placeholder="Research access key"
-                    />
-                  </View>
                   {maternalProfile && (
                     <TouchableOpacity style={s.v4PrefillBtn} onPress={handlePrefillV4FromProfile}>
                       <Zap size={14} color={COLORS.primary} style={{ marginRight: 6 }} />

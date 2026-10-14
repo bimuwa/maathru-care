@@ -1,7 +1,10 @@
 import { supabase } from '../lib/supabase';
 import { GDMRiskRequest, GDMRiskResponse } from '../types/gdm';
 
-const GDM_API_URL = 'https://food-detector-api.onrender.com/predict-diabetes';
+const configuredTimeout = Number(process.env.EXPO_PUBLIC_GDM_TIMEOUT_MS);
+const GDM_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 90_000;
+
+const GDM_API_URL = process.env.EXPO_PUBLIC_GDM_API_URL || 'https://food-detector-api.onrender.com/predict-diabetes';
 
 export const gdmRiskService = {
   async getMaternalProfile(userId: string) {
@@ -19,23 +22,24 @@ export const gdmRiskService = {
   },
 
   async assessRisk(profileData: Partial<GDMRiskRequest>): Promise<GDMRiskResponse> {
-    // Basic validation to ensure required fields aren't completely missing
-    // In a real app, this should be a robust schema validation (like Zod)
+    // Audit: The legacy /predict-diabetes backend requires 15 specific clinical features
     const requiredFields: (keyof GDMRiskRequest)[] = [
-      'age', 'gestational_week', 'no_of_pregnancy', 'bmi',
-      'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin'
+      'age', 'no_of_pregnancy', 'gestation_in_previous_pregnancy', 'bmi',
+      'hdl', 'family_history', 'unexplained_prenatal_loss', 'large_child_or_birth_default',
+      'pcos', 'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin', 'sedentary_lifestyle', 'prediabetes'
     ];
 
-    for (const field of requiredFields) {
-      if (profileData[field] === undefined || profileData[field] === null) {
-        throw new Error(`Missing required clinical data: ${field}`);
-      }
+    const missing = requiredFields.filter(
+      field => profileData[field] === undefined || profileData[field] === null
+    );
+
+    if (missing.length > 0) {
+      throw new Error(`Incomplete clinical profile. Missing: ${missing.join(', ')}`);
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GDM_TIMEOUT_MS);
     try {
-      // Create an AbortController for a 15-second timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(GDM_API_URL, {
         method: 'POST',
@@ -46,13 +50,20 @@ export const gdmRiskService = {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        throw new Error(`Risk Assessment API returned ${response.status}`);
+        if (response.status === 422) throw new Error('Please review the required Health Profile values.');
+        if (response.status === 503) throw new Error('The risk assessment service is unavailable or still starting. Please try again.');
+        throw new Error(`Risk assessment could not complete (HTTP ${response.status}). Please try again later.`);
       }
 
       const result = await response.json();
+      if (!result || (result.success !== undefined
+        ? result.success !== true || typeof result.diabetes_risk !== 'boolean' ||
+          !Number.isFinite(result.risk_percentage) || result.risk_percentage < 0 || result.risk_percentage > 100
+        : ![0, 1].includes(result.prediction) || !Number.isFinite(result.probability) ||
+          result.probability < 0 || result.probability > 1)) {
+        throw new Error('The risk assessment service returned an invalid result. Please try again later.');
+      }
 
       let riskCategory: 'Low Risk' | 'Moderate Risk' | 'High Risk' = 'Low Risk';
       let message = 'Continue maintaining balanced meals and regular prenatal care.';
@@ -69,9 +80,7 @@ export const gdmRiskService = {
           message = result.recommendation;
         }
 
-        const probability = result.risk_percentage !== undefined
-          ? result.risk_percentage / 100
-          : (result.diabetes_risk ? 0.9 : 0.1);
+        const probability = result.risk_percentage / 100;
 
         return {
           prediction: result.diabetes_risk ? 1 : 0,
@@ -101,7 +110,7 @@ export const gdmRiskService = {
       }
 
       return {
-        prediction: result.prediction !== undefined ? result.prediction : (riskCategory === 'High Risk' ? 1 : 0),
+        prediction: result.prediction,
         probability: result.probability,
         riskCategory,
         message
@@ -114,7 +123,12 @@ export const gdmRiskService = {
         throw new Error('The risk assessment service took too long to respond. Please try again.');
       }
 
-      throw new Error('Unable to complete risk assessment right now. Please try again later.');
+      if (error instanceof TypeError) {
+        throw new Error('Unable to connect to the risk assessment service. Please check your connection and try again.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 };
