@@ -59,7 +59,20 @@ export function postFrame(blob: Blob): void {
   }
   const form = new FormData();
   form.append("image", blob, "frame.jpg");
-  fetch(`${config.apiBaseUrl}/api/v1/session/frame`, { method: "POST", headers, body: form }).catch(() => {});
+  fetch(`${config.apiBaseUrl}/api/v1/session/frame`, { method: "POST", headers, body: form })
+    .then(res => { if (res.status === 409 || res.status === 403) resyncCamera(res.status); })
+    .catch(() => {});
+}
+
+// Self-repair: the app thinks the camera is on but the backend says the session is paused (409)
+// or has no consent (403) -- e.g. a resume sent before sign-in finished, or a backend restart
+// (sessions are in memory). Re-send resume / consent, at most once every 5 s.
+let lastResync = 0;
+function resyncCamera(status: number): void {
+  const s = useAppStore.getState();
+  if (!s.cameraEnabled || s.cameraPaused || Date.now() - lastResync < 5000) return;
+  lastResync = Date.now();
+  (status === 403 ? grantCameraConsent() : setCameraActive(true)).catch(() => {});
 }
 
 export async function analyseMood(text: string): Promise<MoodAnalyseResponse> {
@@ -67,7 +80,7 @@ export async function analyseMood(text: string): Promise<MoodAnalyseResponse> {
   const res = await fetch(`${config.apiBaseUrl}/api/v1/mood/analyse`, {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ text })
+    body: JSON.stringify({ text, text_sensing: useAppStore.getState().sentimentEnabled })
   });
   if (!res.ok) throw new Error(`mood analyse request failed: ${res.status}`);
   return (await res.json()) as MoodAnalyseResponse;

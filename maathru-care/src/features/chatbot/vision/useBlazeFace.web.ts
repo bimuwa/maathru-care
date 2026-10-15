@@ -46,6 +46,8 @@ export function useBlazeFace(videoRef: { current: any }, active: boolean): Blaze
     async function tick() {
       const el = videoRef.current;
       const model = modelRef.current;
+      // The browser may still pause a hidden video; resume it so detection sees live frames.
+      if (el && el.paused && el.srcObject) el.play().catch(() => {});
       if (!stopped && model && el && el.readyState >= 2 && el.videoWidth) {
         try {
           const preds: any[] = await model.estimateFaces(el, false);

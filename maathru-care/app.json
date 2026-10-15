@@ -19,7 +19,7 @@
       "package": "com.tharindunuwantha2steam.tharindunuwantha"
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/maathru-care-logo.jpg"
     },
     "plugins": [

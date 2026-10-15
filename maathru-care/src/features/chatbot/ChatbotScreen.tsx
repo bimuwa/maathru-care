@@ -1,8 +1,8 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, findNodeHandle, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, BackHandler, findNodeHandle, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Nunito_400Regular, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold } from "@expo-google-fonts/nunito";
 import { NotoSansSinhala_400Regular, NotoSansSinhala_700Bold } from "@expo-google-fonts/noto-sans-sinhala";
@@ -16,10 +16,15 @@ import { colors, fonts, spacing, type } from "./theme";
 import { i18n } from "./i18n";
 import { useAppStore } from "./store";
 import { config } from "./config";
-import { createChatApi } from "./api/client";
+import { createChatApi, openConversation } from "./api/client";
+import { ChatDrawer } from "./components/ChatDrawer";
+import { MoodInfoModal } from "./components/MoodInfoModal";
+import { loadCameraPreference, saveCameraPreference } from "./cameraPreference";
+import { useAuth } from "../../context/AuthContext";
 import { grantCameraConsent, revokeCamera, setCameraActive, analyseMood } from "./api/sessionApi";
 import { sessionId } from "./session";
 import { getChatbotAccessToken, subscribeChatbotToken } from "./chatbotAuth";
+import { showAlert } from "../../lib/alert";
 // Fonts are loaded here (not in a root layout) so the Nunito/Sinhala setup stays scoped to the chatbot.
 export function ChatbotScreen() {
   const [loaded] = useFonts({ Nunito_400Regular, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, NotoSansSinhala_400Regular, NotoSansSinhala_700Bold });
@@ -33,9 +38,8 @@ export function ChatbotScreen() {
   return <Chat />;
 }
 function Chat() {
-  const router = useRouter();
-  const { consent } = useLocalSearchParams<{ consent?: string }>();
-  const { language, messages, addMessage, newChat, cameraEnabled, cameraPaused, consentSeen, setConsentSeen, authenticated, authError } = useAppStore();
+  const userId = useAuth().user?.id ?? null;
+  const { language, messages, addMessage, newChat, cameraEnabled, cameraPaused, sentimentEnabled, setSentimentEnabled, consentSeen, setConsentSeen, consentAccepted, conversationId, authenticated, authError } = useAppStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
@@ -46,21 +50,79 @@ function Chat() {
   const [dynamicMode, setDynamicMode] = useState(false);
   const [showDev, setShowDev] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [showConsent, setShowConsent] = useState(consent === "1" && !consentSeen);
+  const [showDrawer, setShowDrawer] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const lastReadings = useAppStore(s => s.lastReadings);
+  const [showConsent, setShowConsent] = useState(false);
+  // The privacy notice shows only the first time a user opens the chat. After that the saved
+  // choice is applied: camera back on if they agreed and left it on, otherwise it stays off.
+  useEffect(() => {
+    // Wait for the chatbot sign-in: a consent call sent before the token exists gets a 401.
+    if (!userId || !authenticated) return;
+    let cancelled = false;
+    loadCameraPreference(userId).then(pref => {
+      if (cancelled) return;
+      const s = useAppStore.getState();
+      if (!pref) { if (!s.consentSeen) setShowConsent(true); return; }
+      s.setConsentSeen(true);
+      if (pref.accepted) s.setConsentAccepted(true);
+      if (pref.accepted && pref.on && !s.cameraEnabled) enableCamera();
+    });
+    return () => { cancelled = true; };
+  }, [userId, authenticated]);
   const scrollRef = useRef<ScrollView>(null);
   const api = useMemo(() => createChatApi(() => useAppStore.getState().scenario), []);
   // When camera sensing is enabled, actually acquire the browser webcam on web (permission prompt +
   // in-use indicator). Detection runs in the background from here; the panel is just a viewport.
   const camera = useWebCamera(cameraEnabled);
-  useEffect(() => { if (cameraEnabled) preloadBlazeFace(); }, [cameraEnabled]);
-  // Camera sensing only runs while the chat is open: tell the backend when it starts/stops with the screen.
+  // If the webcam can't start (blocked, or busy in another app or tab), say so and turn the
+  // camera switch back off instead of leaving it "on" with nothing captured. The saved
+  // preference is left alone, so the camera is tried again next time.
   useEffect(() => {
+    if (camera.state !== "denied" && camera.state !== "unavailable") return;
+    revokeCamera().catch(() => {});
+    useAppStore.getState().setCamera(false);
+    if (!useAppStore.getState().sentimentEnabled) useAppStore.getState().setSentimentEnabled(true);
+    showAlert("Camera couldn't start", "Your camera may be blocked or in use by another app or browser tab. Close it there and turn Camera on again.");
+  }, [camera.state]);
+  useEffect(() => { if (cameraEnabled) preloadBlazeFace(); }, [cameraEnabled]);
+  // Web: the chat screen never scrolls as a whole -- only the message list does. Lock the document
+  // while the chat is open (the page is also pinned to the window via styles.pageWeb).
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const html = document.documentElement, body = document.body;
+    const prev = [html.style.overflow, body.style.overflow];
+    html.style.overflow = "hidden"; body.style.overflow = "hidden";
+    window.scrollTo(0, 0);
+    return () => { html.style.overflow = prev[0]; body.style.overflow = prev[1]; };
+  }, []);
+  // Back to Home: a right swipe from the left edge (iOS uses the native stack gesture), and the
+  // Android back button. With no history (chat opened directly) it goes to Home instead.
+  const router = useRouter();
+  const goBackRef = useRef(() => {});
+  goBackRef.current = () => { if (router.canGoBack()) router.back(); else router.replace("/(mother)/home"); };
+  const edgeSwipe = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, g) => g.dx > 8 && Math.abs(g.dx) > Math.abs(g.dy),
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderRelease: (_, g) => { if (g.dx > 60 && Math.abs(g.dy) < 80) goBackRef.current(); },
+  })).current;
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => { goBackRef.current(); return true; });
+    return () => sub.remove();
+  }, []);
+  // Camera sensing only runs while the chat is open: tell the backend when it starts/stops with the screen.
+  // The resume waits for the chatbot sign-in; sent earlier it got a 401 and left the backend
+  // session paused, so every frame was rejected with 409.
+  useEffect(() => {
+    if (!authenticated) return;
     const s = useAppStore.getState();
     if (s.cameraEnabled && !s.cameraPaused) setCameraActive(true).catch(() => {});
-    return () => {
-      const c = useAppStore.getState();
-      if (c.cameraEnabled && !c.cameraPaused) setCameraActive(false).catch(() => {});
-    };
+  }, [authenticated]);
+  useEffect(() => () => {
+    const c = useAppStore.getState();
+    if (c.cameraEnabled && !c.cameraPaused) setCameraActive(false).catch(() => {});
   }, []);
   // Raised = the resting mid-screen position shown before the user engages the composer.
   const raised = messages.length === 0 && !focused;
@@ -128,8 +190,9 @@ function Chat() {
       const response = await api.sendMessage({ session_id: sessionId, text, ui_language: language });
       addMessage({ id: response.message_id, role: "assistant", text: response.response, response });
     } catch { setError(true); } finally { setSending(false); }
-    // Real mood analysis, DevPanel-only (mood.state must never appear in
-    // user-facing UI). Fire-and-forget: it never affects the chat reply.
+    // Real fused mood analysis for the DevPanel. The per-modality camera/text
+    // readings shown to users come from the chat reply (Info popup, owner
+    // decision 2026-10-15). Fire-and-forget: it never affects the chat reply.
     if (useAppStore.getState().authenticated) {
       analyseMood(text)
         .then(result => useAppStore.getState().setLastMoodAnalysis(result))
@@ -138,10 +201,15 @@ function Chat() {
   }
   async function closeConsent(enable: boolean) {
     setConsentSeen(true); setShowConsent(false);
-    if (!enable) return;
+    if (enable) await enableCamera();
+    else if (userId) saveCameraPreference(userId, { accepted: useAppStore.getState().consentAccepted, on: false });
+  }
+  async function enableCamera() {
     try {
       await grantCameraConsent();
       useAppStore.getState().setCamera(true);
+      useAppStore.getState().setConsentAccepted(true);
+      if (userId) saveCameraPreference(userId, { accepted: true, on: true });
     } catch {
       // consent request failed -- camera stays off, no silent fallback.
     }
@@ -150,34 +218,68 @@ function Chat() {
     if (cameraEnabled) {
       try { await revokeCamera(); } catch { /* best-effort; still turn preview off */ }
       useAppStore.getState().setCamera(false);
+      if (userId) saveCameraPreference(userId, { accepted: true, on: false });
     } else {
-      // Never re-grant automatically -- always route through the consent modal.
-      setShowConsent(true);
+      // The privacy notice is shown until the user accepts it once; after that the camera
+      // switch re-grants directly (still recorded by the backend as a consent event).
+      if (consentAccepted) await enableCamera();
+      else setShowConsent(true);
     }
   }
-  async function togglePause() {
-    const next = !cameraPaused;
-    try {
-      await setCameraActive(!next);
-      useAppStore.getState().setCameraPaused(next);
-    } catch { /* leave state unchanged on failure */ }
+  // Mood needs at least one signal: the camera or the sentiment (text) model.
+  function alertOneOn() {
+    showAlert("Keep one on", "Camera or Text mood must stay on so I can understand how you feel.");
   }
-  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+  function onCameraToggle() {
+    if (cameraEnabled) {
+      if (!sentimentEnabled) return alertOneOn();
+      toggleCamera();
+    } else {
+      // Only the first time does this open the consent modal, which needs the panel closed.
+      if (!consentAccepted) setShowDrawer(false);
+      toggleCamera();
+    }
+  }
+  function onSentimentToggle() {
+    if (sentimentEnabled && !cameraEnabled) return alertOneOn();
+    setSentimentEnabled(!sentimentEnabled);
+  }
+  function startNewChat() {
+    newChat(); setError(false); setShowDrawer(false);
+  }
+  async function openPastChat(id: string) {
+    try {
+      await openConversation(id);
+      setError(false); setShowDrawer(false);
+    } catch {
+      showAlert("Couldn't open that chat", "Please try again.");
+    }
+  }
+  return <KeyboardAvoidingView style={[styles.page, Platform.OS === "web" && styles.pageWeb]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
     <View style={styles.headerBar}>
       <View style={styles.headerActions}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/(mother)/home"))} style={({ pressed }) => [styles.newChatButton, pressed && styles.newChatButtonPressed]}><Ionicons name="chevron-back" size={24} color={colors.deepPink} /></Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="New chat" onPress={newChat} style={({ pressed }) => [styles.newChatButton, pressed && styles.newChatButtonPressed]}><Ionicons name="add" size={26} color={colors.deepPink} /></Pressable>
-      </View>
-      <View style={styles.headerActions}>
-        {Platform.OS === "web" && cameraEnabled && (
-          <Pressable accessibilityRole="button" accessibilityLabel={showPreview ? "Hide camera preview" : "Show camera preview"} onPress={() => setShowPreview(v => !v)} style={[styles.cameraButton, styles.cameraButtonOff]}><Ionicons name={showPreview ? "eye" : "eye-outline"} size={20} color={colors.muted} /></Pressable>
-        )}
-        {Platform.OS === "web" && cameraEnabled && (
-          <Pressable accessibilityRole="button" accessibilityLabel={cameraPaused ? "Resume camera sensing" : "Pause camera sensing"} onPress={togglePause} style={[styles.cameraButton, styles.cameraButtonOff]}><Ionicons name={cameraPaused ? "play" : "pause"} size={20} color={colors.muted} /></Pressable>
-        )}
-        <Pressable accessibilityRole="button" accessibilityLabel={cameraEnabled ? i18n.t("disableCamera") : i18n.t("enableCamera")} onPress={toggleCamera} style={[styles.cameraButton, !cameraEnabled && styles.cameraButtonOff]}><Ionicons name={cameraEnabled ? "videocam" : "videocam-off"} size={20} color={cameraEnabled ? colors.white : colors.muted} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Menu" onPress={() => setShowDrawer(true)} style={({ pressed }) => [styles.newChatButton, pressed && styles.newChatButtonPressed]}><View style={styles.menuIcon}><View style={styles.menuIconLong} /><View style={styles.menuIconShort} /></View></Pressable>
       </View>
     </View>
+    {Platform.OS !== "ios" && !showDrawer && <View {...edgeSwipe.panHandlers} style={styles.edgeSwipe} />}
+    <ChatDrawer
+      open={showDrawer}
+      onClose={() => setShowDrawer(false)}
+      onNewChat={startNewChat}
+      onOpenChat={openPastChat}
+      activeId={conversationId}
+      footer={<>
+        <SettingRow icon="videocam-outline" label="Camera" value={cameraEnabled} onToggle={onCameraToggle} />
+        {Platform.OS === "web" && <SettingRow icon="eye-outline" label="Preview" value={cameraEnabled && showPreview} disabled={!cameraEnabled} onToggle={() => setShowPreview(v => !v)} />}
+        <SettingRow icon="chatbubble-ellipses-outline" label="Text mood" value={sentimentEnabled} onToggle={onSentimentToggle} />
+        <View style={styles.footerDivider} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Info" onPress={() => { setShowDrawer(false); setShowInfo(true); }} style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
+          <Ionicons name="information-circle-outline" size={20} color={colors.deepPink} />
+          <Text style={styles.menuText}>Info</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.deepPink} />
+        </Pressable>
+      </>}
+    />
     <Screen scrollRef={scrollRef} onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
       {showDev && <DevPanel />}
       {messages.length === 0
@@ -206,6 +308,7 @@ function Chat() {
         <Pressable accessibilityRole="button" accessibilityLabel={i18n.t("send")} onPress={send} style={styles.send}><Ionicons name="search" size={20} color={colors.white} /></Pressable>
       </View>
     </Animated.View>
+    <MoodInfoModal visible={showInfo} onClose={() => setShowInfo(false)} readings={lastReadings} cameraEnabled={cameraEnabled} textMoodEnabled={sentimentEnabled} />
     <Modal transparent visible={showConsent} animationType="none" onRequestClose={() => closeConsent(false)}>
       <View style={styles.modalRoot}>
         <BlurView intensity={28} tint="light" style={StyleSheet.absoluteFill} />
@@ -220,14 +323,37 @@ function Chat() {
     </Modal>
   </KeyboardAvoidingView>;
 }
+// One settings-menu row: icon, one-word name, on/off toggle. The whole row is the tap target.
+function SettingRow({ icon, label, value, disabled, onToggle }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: boolean; disabled?: boolean; onToggle: () => void }) {
+  return <Pressable accessibilityRole="switch" accessibilityLabel={label} aria-checked={value} aria-disabled={!!disabled} disabled={disabled} onPress={onToggle} style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed, disabled && styles.menuItemDisabled]}>
+    <Ionicons name={icon} size={20} color={colors.deepPink} />
+    <Text style={styles.menuText}>{label}</Text>
+    <View style={[styles.toggleTrack, value && styles.toggleTrackOn]}><View style={[styles.toggleKnob, value && styles.toggleKnobOn]} /></View>
+  </Pressable>;
+}
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.paper },
+  page:{ flex: 1, backgroundColor: colors.paper },
+  // Pinned to the visible window, so the screen (and the side panel inside it) always matches it.
+  pageWeb: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0 } as any,
+  edgeSwipe: { position: "absolute", left: 0, top: 72, bottom: 0, width: 24, zIndex: 40, touchAction: "none" } as any,
   headerBar: { width: "100%", maxWidth: 860, alignSelf: "center", height: 72, paddingHorizontal: spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.card, shadowColor: colors.primary, shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2, zIndex: 2, boxShadow: "0 3px 8px rgba(217,108,138,.08)" as any },
   newChatButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: "transparent", alignItems: "center", justifyContent: "center", borderWidth: 2.5, borderColor: colors.deepPink, outlineStyle: "none" as any },
   newChatButtonPressed: { backgroundColor: colors.lightPink },
+  menuIcon: { width: 18, gap: 5, alignItems: "flex-start" },
+  menuIconLong: { width: 18, height: 2.5, borderRadius: 2, backgroundColor: colors.deepPink },
+  menuIconShort: { width: 11, height: 2.5, borderRadius: 2, backgroundColor: colors.deepPink },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   cameraButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.deepPink, alignItems: "center", justifyContent: "center", borderWidth: 0, shadowOpacity: 0, elevation: 0, outlineStyle: "none" as any },
   cameraButtonOff: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+  menuItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, outlineStyle: "none" as any },
+  menuItemPressed: { backgroundColor: colors.veryLightPink },
+  menuItemDisabled: { opacity: 0.45 },
+  footerDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6, marginHorizontal: 12 },
+  menuText: { flex: 1, color: colors.ink, fontFamily: fonts.semiBold, fontSize: 15 },
+  toggleTrack: { width: 42, height: 24, borderRadius: 12, backgroundColor: colors.border, padding: 3, justifyContent: "center" },
+  toggleTrackOn: { backgroundColor: colors.primary },
+  toggleKnob: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.white, boxShadow: "0 1px 3px rgba(48,39,42,.25)" as any },
+  toggleKnobOn: { alignSelf: "flex-end" },
   empty: { alignItems: "center", paddingVertical: 70, paddingHorizontal: spacing.lg },
   sun: { color: colors.deepPink, fontSize: 34, marginBottom: 16 },
   emptyTitle: { color: colors.ink, fontFamily: fonts.extraBold, fontSize: 22, textAlign: "center" },

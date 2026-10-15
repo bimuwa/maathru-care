@@ -2,6 +2,9 @@
 module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   presets: [require("nativewind/preset")],
+  // Required with web output "single": NativeWind's web runtime throws on startup under the
+  // default "media" mode. No dark: variants are used, so this changes no styling.
+  darkMode: "class",
   theme: {
     extend: {
       colors: {

@@ -111,7 +111,9 @@ export function CameraPreview({ state, stream, visible, postingActive }: { state
 
 const styles = StyleSheet.create({
   wrap: { position: "absolute", right: 14, top: 84, width: W, height: H, borderRadius: 16, overflow: "hidden", backgroundColor: colors.ink, borderWidth: 1, borderColor: colors.border, zIndex: 8 },
-  hidden: { width: 1, height: 1, right: -20, top: -20, opacity: 0, borderWidth: 0 },
+  // Hidden = invisible but still on-screen at full size. Chrome pauses muted autoplay videos that
+  // are off-screen, which froze detection and stopped frame capture whenever the preview was hidden.
+  hidden: { opacity: 0, borderWidth: 0 },
   message: { alignItems: "center", justifyContent: "center", padding: 10, backgroundColor: colors.card },
   messageText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, textAlign: "center" },
   dot: { position: "absolute", left: 8, top: 8, width: 9, height: 9, borderRadius: 5, backgroundColor: "#3FBF6A" },
