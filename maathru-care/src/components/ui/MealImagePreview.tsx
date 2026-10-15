@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Image, ActivityIndicator, Text, Animated, Easing } from 'react-native';
+import { View, Image, ActivityIndicator, Text, Animated, Easing, useWindowDimensions } from 'react-native';
 import { Sparkles } from 'lucide-react-native';
 import { Detection as DetectionType } from '../../services/api/foodDetector';
 
@@ -8,14 +8,17 @@ interface MealImagePreviewProps {
   isAnalyzing: boolean;
   isCompressing?: boolean;
   detections?: DetectionType[];
+  aspectRatio?: number;
 }
 
 export function MealImagePreview({
   imageUri,
   isAnalyzing,
   isCompressing,
-  detections = []
+  aspectRatio = 4 / 3,
 }: MealImagePreviewProps) {
+  const { width } = useWindowDimensions();
+  const previewHeight = Math.min(280, Math.max(140, (width - 32) / (aspectRatio > 0 ? aspectRatio : 4 / 3)));
   const scanAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -49,11 +52,11 @@ export function MealImagePreview({
   });
 
   return (
-    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#F8FAFC', borderRadius: 24, overflow: 'hidden', marginBottom: 24, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 4 }}>
+    <View style={{ width: '100%', height: previewHeight, backgroundColor: '#F8FAFC', borderRadius: 20, overflow: 'hidden', marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 4 }}>
       <Image
         source={{ uri: imageUri }}
         style={{ width: '100%', height: '100%' }}
-        resizeMode="cover"
+        resizeMode="contain"
       />
 
       {/* Scanning / Loading Overlay */}

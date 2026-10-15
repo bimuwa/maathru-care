@@ -1,10 +1,13 @@
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-const BACKEND_BASE_URL = Platform.select({
+const BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL || Platform.select({
+  // The web app runs on the same computer as the local API. Native devices still
+  // need the development machine's LAN address unless an env URL is supplied.
+  web: 'http://localhost:5000/api/v1',
   android: 'http://192.168.1.11:5000/api/v1',
   ios: 'http://192.168.1.11:5000/api/v1',
-  default: 'http://192.168.1.11:5000/api/v1',
+  default: 'http://localhost:5000/api/v1',
 });
 
 // ─── Auth Types ─────────────────────────────────────────────────────────────
@@ -275,32 +278,28 @@ class ApiService {
     };
 
     if (data.role === 'mother') {
-      insertData.age = parseInt(data.age || '25', 10);
-      insertData.blood_group = data.bloodGroup;
-      insertData.gestational_week = parseInt(data.gestationalWeek || '0', 10);
-      insertData.no_of_pregnancy = parseFloat(data.gravida || '1');
-      insertData.gestation_in_previous_pregnancy = parseFloat(data.gestationInPreviousPregnancy || '0');
-      insertData.bmi = parseFloat(data.bmi || '22');
-      insertData.hdl = parseFloat(data.hdl || '50');
-      insertData.sys_bp = parseFloat(data.sysBp || '120');
-      insertData.dia_bp = parseFloat(data.diaBp || '80');
-      insertData.ogtt = parseFloat(data.ogtt || '120');
-      insertData.hemoglobin = parseFloat(data.hemoglobin || '12');
+      insertData.age = data.age ? parseInt(data.age, 10) : null;
+      insertData.blood_group = data.bloodGroup || null;
+      insertData.gestational_week = data.gestationalWeek ? parseInt(data.gestationalWeek, 10) : null;
+      insertData.no_of_pregnancy = data.gravida ? parseFloat(data.gravida) : null;
+      insertData.gestation_in_previous_pregnancy = data.gestationInPreviousPregnancy ? parseFloat(data.gestationInPreviousPregnancy) : null;
+      insertData.bmi = data.bmi ? parseFloat(data.bmi) : null;
+      insertData.hdl = data.hdl ? parseFloat(data.hdl) : null;
+      insertData.sys_bp = data.sysBp ? parseFloat(data.sysBp) : null;
+      insertData.dia_bp = data.diaBp ? parseFloat(data.diaBp) : null;
+      insertData.ogtt = data.ogtt ? parseFloat(data.ogtt) : null;
+      insertData.hemoglobin = data.hemoglobin ? parseFloat(data.hemoglobin) : null;
       
-      insertData.family_history = data.familyHistory ? 1 : 0;
-      insertData.unexplained_prenatal_loss = data.unexplainedPrenatalLoss ? 1 : 0;
-      insertData.large_child_or_birth_default = data.largeChildOrBirthDefault ? 1 : 0;
-      insertData.pcos = data.pcos ? 1 : 0;
-      insertData.sedentary_lifestyle = data.sedentaryLifestyle ? 1 : 0;
-      insertData.prediabetes = data.prediabetes ? 1 : 0;
+      insertData.family_history = data.familyHistory !== undefined ? (data.familyHistory ? 1 : 0) : null;
+      insertData.unexplained_prenatal_loss = data.unexplainedPrenatalLoss !== undefined ? (data.unexplainedPrenatalLoss ? 1 : 0) : null;
+      insertData.large_child_or_birth_default = data.largeChildOrBirthDefault !== undefined ? (data.largeChildOrBirthDefault ? 1 : 0) : null;
+      insertData.pcos = data.pcos !== undefined ? (data.pcos ? 1 : 0) : null;
+      insertData.sedentary_lifestyle = data.sedentaryLifestyle !== undefined ? (data.sedentaryLifestyle ? 1 : 0) : null;
+      insertData.prediabetes = data.prediabetes !== undefined ? (data.prediabetes ? 1 : 0) : null;
     } else if (data.role === 'doctor') {
       insertData.medical_license = data.medicalLicense;
       insertData.specialty = data.specialty;
       insertData.hospital = data.hospital;
-      // Provide dummy values for mandatory mother fields
-      insertData.age = 30; 
-      insertData.gestational_week = 0;
-      insertData.bmi = 22.0;
       insertData.approval_status = 'pending';
     }
 
@@ -555,5 +554,4 @@ class ApiService {
 }
 
 export const api = new ApiService();
-
 

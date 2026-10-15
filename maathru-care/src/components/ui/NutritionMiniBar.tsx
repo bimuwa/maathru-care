@@ -1,124 +1,37 @@
-import React from 'react';
-import { View, Text } from 'react-native';
-import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import type { NutrientValues, NutrientKey } from '@/services/nutritionCalculator';
 
-type NutritionKey = 'carbsG' | 'sugarG' | 'fatG' | 'ironMg' | 'calciumMg' | 'fiberG';
-
-interface NutrientConfig {
-  key: NutritionKey;
-  label: string;
-  unit: string;
-  color: string;
-  emoji: string;
-}
-
-const ALL_NUTRIENTS: NutrientConfig[] = [
-  { key: 'carbsG',    label: 'Carbs',   unit: 'g',  color: '#F59E0B', emoji: '🌾' },
-  { key: 'sugarG',    label: 'Sugar',   unit: 'g',  color: '#EC4899', emoji: '🍬' },
-  { key: 'fatG',      label: 'Fat',     unit: 'g',  color: '#F97316', emoji: '🥑' },
-  { key: 'ironMg',    label: 'Iron',    unit: 'mg', color: '#EF4444', emoji: '🩸' },
+const NUTRIENTS: { key: NutrientKey; label: string; unit: string; color: string; emoji: string }[] = [
+  { key: 'carbsG', label: 'Carbs', unit: 'g', color: '#F59E0B', emoji: '🌾' },
+  { key: 'sugarG', label: 'Sugar', unit: 'g', color: '#EC4899', emoji: '🍬' },
+  { key: 'fiberG', label: 'Fiber', unit: 'g', color: '#10B981', emoji: '🌿' },
+  { key: 'fatG', label: 'Fat', unit: 'g', color: '#F97316', emoji: '🥑' },
+  { key: 'ironMg', label: 'Iron', unit: 'mg', color: '#EF4444', emoji: '🩸' },
   { key: 'calciumMg', label: 'Calcium', unit: 'mg', color: '#3B82F6', emoji: '🦴' },
-  { key: 'fiberG',    label: 'Fiber',   unit: 'g',  color: '#10B981', emoji: '🌿' },
 ];
 
-interface NutritionTotals {
-  carbsG: number;
-  sugarG: number;
-  fiberG: number;
-  fatG: number;
-  ironMg: number;
-  calciumMg: number;
-}
-
-interface NutritionMiniBarProps {
-  totals: NutritionTotals;
-}
-
-export function NutritionMiniBar({ totals }: NutritionMiniBarProps) {
-  const getValue = (key: NutritionKey): number => {
-    return totals[key] ?? 0;
-  };
-
-  // Only show nutrients that have a value > 0 in the current meal
-  const activeNutrients = ALL_NUTRIENTS.filter((n) => getValue(n.key) > 0);
-  
-  // If no nutrients are > 0, fallback to showing the default core 4
-  const nutrientsToDisplay = activeNutrients.length > 0 ? activeNutrients : ALL_NUTRIENTS.filter(n => ['carbsG', 'ironMg', 'calciumMg', 'fiberG'].includes(n.key));
-
+export function NutritionMiniBar({ totals }: { totals: NutrientValues }) {
+  const [showInfo, setShowInfo] = useState(false);
   return (
     <View style={{ gap: 8 }}>
-      <Text
-        style={{
-          fontSize: 11,
-          fontWeight: '600',
-          color: '#94A3B8',
-          letterSpacing: 0.8,
-          textTransform: 'uppercase',
-          marginBottom: 2,
-        }}
-      >
-        Nutrition Preview
-      </Text>
-
-      {nutrientsToDisplay.map((nutrient) => {
-        const current = getValue(nutrient.key);
-        const target = PREGNANCY_NUTRITION_TARGETS[nutrient.key];
-        const pct = Math.min(100, target > 0 ? Math.round((current / target) * 100) : 0);
-
+      <Text style={{ fontSize: 15, fontWeight: '700', color: '#0F172A' }}>Estimated nutrition</Text>
+      <Text style={{ fontSize: 12, color: '#64748B', lineHeight: 19 }}>මෙහි පෙන්වන පෝෂණ අගයන් ඇස්තමේන්තු පමණි. ආහාර ප්‍රමාණය, අමුද්‍රව්‍ය සහ පිසින ආකාරය අනුව සැබෑ අගයන් වෙනස් විය හැක.</Text>
+      <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: showInfo }} onPress={() => setShowInfo(!showInfo)} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: '#047857', fontSize: 12 }}>{showInfo ? 'Hide estimate details −' : 'ⓘ About this estimate'}</Text></TouchableOpacity>
+      {showInfo && <Text style={{ fontSize: 12, color: '#64748B', lineHeight: 19 }}>AI identifies foods; it does not verify portion size. Counts and servings are estimates. Only documented matching units are calculated. These values are not measured clinical intake.</Text>}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {NUTRIENTS.map((nutrient) => {
+        const value = totals[nutrient.key];
         return (
-          <View key={nutrient.key} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {/* Emoji icon */}
-            <Text style={{ fontSize: 13, width: 22 }}>{nutrient.emoji}</Text>
-
-            {/* Label */}
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: '500',
-                color: '#64748B',
-                width: 46,
-              }}
-            >
-              {nutrient.label}
-            </Text>
-
-            {/* Bar */}
-            <View
-              style={{
-                flex: 1,
-                height: 6,
-                backgroundColor: '#F1F5F9',
-                borderRadius: 3,
-                overflow: 'hidden',
-                marginHorizontal: 8,
-              }}
-            >
-              <View
-                style={{
-                  width: `${pct}%`,
-                  height: '100%',
-                  backgroundColor: nutrient.color,
-                  borderRadius: 3,
-                }}
-              />
-            </View>
-
-            {/* Value */}
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: '600',
-                color: pct > 0 ? nutrient.color : '#CBD5E1',
-                width: 42,
-                textAlign: 'right',
-              }}
-            >
-              {current.toFixed(0)}/{target}{nutrient.unit}
+          <View key={nutrient.key} style={{ flexBasis: '48%', flexGrow: 1, minWidth: 112, minHeight: 56, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8FAFC', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 11, fontWeight: '500', color: '#64748B' }}>{nutrient.emoji} {nutrient.label}</Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: value === null ? '#64748B' : nutrient.color, marginTop: 2 }}>
+              {value === null ? 'Unavailable' : `${value.toFixed(1)} ${nutrient.unit}`}
             </Text>
           </View>
         );
       })}
+      </View>
     </View>
   );
 }
-

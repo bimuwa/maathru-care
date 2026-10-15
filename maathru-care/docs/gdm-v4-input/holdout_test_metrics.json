@@ -1,0 +1,29 @@
+{
+  "selected_algorithm": "RandomForest",
+  "selected_features": [
+    "Age",
+    "No of Pregnancy",
+    "Family History",
+    "unexplained prenetal loss",
+    "Sedentary Lifestyle"
+  ],
+  "threshold": 0.3,
+  "threshold_rule": "Max validation F2 with precision >= 0.45 (research-only constraint)",
+  "n_train": 2464,
+  "n_val": 528,
+  "n_test": 529,
+  "test_gdm_prevalence": 0.389413988657845,
+  "accuracy": 0.9357277882797732,
+  "balanced_accuracy": 0.9306636809041451,
+  "precision": 0.9257425742574258,
+  "recall": 0.9077669902912622,
+  "f1": 0.9166666666666666,
+  "roc_auc": 0.976381917100003,
+  "pr_auc": 0.9577537574830263,
+  "brier_score": 0.05431971836917503,
+  "TN": 308,
+  "FP": 15,
+  "FN": 19,
+  "TP": 187,
+  "caution": "Research-only; not clinically validated or approved for diagnosis"
+}

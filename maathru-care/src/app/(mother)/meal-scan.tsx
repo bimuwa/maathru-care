@@ -7,7 +7,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
-  Animated,
+  KeyboardAvoidingView,
   Modal,
   TextInput,
   FlatList,
@@ -16,7 +16,7 @@ import { AlertCircle, CheckCircle2, ChevronRight, RefreshCcw, ShieldAlert, Lock,
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // UI Components
 import { MealScanHeader } from '@/components/ui/MealScanHeader';
@@ -24,23 +24,34 @@ import { MealPlateCard } from '@/components/ui/MealPlateCard';
 import { DateStrip } from '@/components/ui/DateStrip';
 import { MealTypePicker, getSmartMealDefault } from '@/components/ui/MealTypePicker';
 import { ScanActionButtons } from '@/components/ui/ScanActionButtons';
-import { DetectionResultCard } from '@/components/ui/DetectionResultCard';
 import { MealImagePreview } from '@/components/ui/MealImagePreview';
 import { MealSaveSuccessModal } from '@/components/ui/MealSaveSuccessModal';
 import { GDMFoodWarningModal, FoodWarning } from '@/components/ui/GDMFoodWarningModal';
 
 // API & Services
 import { supabase } from '@/lib/supabase';
-import { analyzeMealImage, Detection } from '@/services/api/foodDetector';
+import { analyzeMealImage } from '@/services/api/foodDetector';
 import { useAuth } from '@/context/AuthContext';
 import { mealService } from '@/services/mealService';
 import { gdmCacheService } from '@/services/gdmCacheService';
 import { ScanState, MealItem } from '@/types/meal';
 import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
 import { GDMRiskResponse } from '@/types/gdm';
+import {
+  mapFoodNutritionRecord,
+  type PortionUnit,
+} from '@/services/nutritionCalculator';
+import { adjustEstimatedQuantity, createEstimatedPreviewItem, groupDetectionEvidence, type RawFoodDetection } from '@/services/foodQuantitySuggestions';
 
 export default function DetectScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const scanRequestId = useRef(0);
+  const referenceVersions = useRef(new Map<string, number>());
+  const mounted = useRef(true);
+  const scrollRef = useRef<ScrollView>(null);
+  const plateTop = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; scanRequestId.current += 1; }; }, []);
   const { user } = useAuth();
   const userId = user?.id || '';
 
@@ -71,6 +82,13 @@ export default function DetectScreen() {
 
   // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
+  const previousPlateCount = useRef(0);
+  useEffect(() => {
+    if (mealItems.length > previousPlateCount.current) {
+      scrollRef.current?.scrollTo({ y: plateTop.current, animated: true });
+    }
+    previousPlateCount.current = mealItems.length;
+  }, [mealItems.length]);
   const [mealType, setMealType] = useState<string>(getSmartMealDefault());
 
   const initialDate = React.useMemo(() => {
@@ -84,13 +102,11 @@ export default function DetectScreen() {
 
   // ── Active scan state ───────────────────────────────────────
   const [scanState, setScanState] = useState<ScanState>('idle');
-  const [currentDetections, setCurrentDetections] = useState<Detection[]>([]);
-  const [selectedDetectionIds, setSelectedDetectionIds] = useState<string[]>([]);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageAspectRatio, setImageAspectRatio] = useState(4 / 3);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // ── Loading states ──────────────────────────────────────────
-  const [isSaving, setIsSaving] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -99,68 +115,59 @@ export default function DetectScreen() {
   const [gdmWarnings, setGdmWarnings] = useState<FoodWarning[]>([]);
   const [gdmRiskCategory, setGdmRiskCategory] = useState<GDMRiskResponse['riskCategory'] | null>(null);
   const [pendingMealItems, setPendingMealItems] = useState<MealItem[]>([]);
+  const [pendingPreviousMealItems, setPendingPreviousMealItems] = useState<MealItem[]>([]);
   const [pendingFoodNames, setPendingFoodNames] = useState<string[]>([]);
 
   // ── Manual Search State ─────────────────────────────────────
   const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
+  const [correctionCandidateId, setCorrectionCandidateId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Debounced Search Effect
+  // Ignore stale responses when the query changes or the correction modal closes.
   useEffect(() => {
-    if (searchQuery.trim().length < 2) {
+    setSearchError(null);
+    if (!isSearchModalVisible || searchQuery.trim().length < 2) {
       setSearchResults([]);
       setIsSearching(false);
       return;
     }
-
+    let active = true;
     setIsSearching(true);
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const { data, error } = await supabase
-          .from('maternal_foods')
-          .select('*')
-          .ilike('display_name', `%${searchQuery.trim()}%`)
-          .limit(20);
-
-        if (!error && data) {
-          setSearchResults(data);
-        }
-      } catch (err) {
-        console.error('Search error:', err);
+        const { data, error } = await supabase.from('maternal_foods').select('*')
+          .ilike('display_name', `%${searchQuery.trim()}%`).limit(20);
+        if (!active) return;
+        if (error) throw error;
+        setSearchResults(data ?? []);
+      } catch (error) {
+        if (!active) return;
+        console.error('Food correction search failed:', error);
+        setSearchResults([]);
+        setSearchError('Food search is unavailable. Check your connection and try another search.');
       } finally {
-        setIsSearching(false);
+        if (active) setIsSearching(false);
       }
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery]);
+    }, 500);
+    return () => { active = false; clearTimeout(delayDebounceFn); };
+  }, [searchQuery, isSearchModalVisible]);
 
   const handleSelectManualFood = (food: any) => {
+    const record = mapFoodNutritionRecord(food);
+    const id = correctionCandidateId ?? `${food.food_id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    referenceVersions.current.set(id, (referenceVersions.current.get(id) ?? 0) + 1);
+    const next: MealItem = { ...createEstimatedPreviewItem(id, record, record.foodId, null), timestamp: Date.now(), referenceStatus: 'loaded', rawDetections: [] };
+    setMealItems((previous) => correctionCandidateId !== null
+      ? previous.map((item) => item.id === id ? { ...next, timestamp: item.timestamp, imageUri: item.imageUri } : item)
+      : [...previous, next]);
+    setCorrectionCandidateId(null);
     setIsSearchModalVisible(false);
     setSearchQuery('');
     setSearchResults([]);
-    
-    // Map DB row to MealItem (assuming 1 default serving)
-    const newMealItem: MealItem = {
-      id: `${food.food_id}-${Date.now()}`,
-      foodId: food.food_id,
-      name: food.display_name || food.food_id,
-      servingMultiplier: 1,
-      imageUri: null, // No image since it's manual
-      carbsG: food.carbs_g || 0,
-      sugarG: food.sugar_g || 0,
-      fiberG: food.fiber_g || 0,
-      fatG: food.fat_g || 0,
-      proteinG: food.protein_g || 0,
-      ironMg: food.iron_mg || 0,
-      calciumMg: food.calcium_mg || 0,
-      gi_category: food.gi_category || 'Low',
-    };
-
-    // Proceed to warning check directly
-    checkWarningsAndCommit([newMealItem]);
+    if (next.calculatedNutrients) void checkWarningsAndCommit([next]);
   };
 
   // Separated Warning Logic so both Scanner and Manual Search can use it
@@ -173,32 +180,36 @@ export default function DetectScreen() {
         mealService.getTodayTotals(userId),
       ]);
 
-      const newSugar = fetchedItems.reduce((s, i) => s + i.sugarG * i.servingMultiplier, 0);
-      const newCarbs = fetchedItems.reduce((s, i) => s + i.carbsG * i.servingMultiplier, 0);
-      const newFat = fetchedItems.reduce((s, i) => s + i.fatG * i.servingMultiplier, 0);
+      const sumKnown = (key: 'sugarG' | 'carbsG' | 'fatG') => {
+        const values = fetchedItems.map((item) => item.calculatedNutrients?.[key] ?? null);
+        return values.some((value) => value === null) ? null : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+      };
+      const newSugar = sumKnown('sugarG');
+      const newCarbs = sumKnown('carbsG');
+      const newFat = sumKnown('fatG');
 
       const warnings: FoodWarning[] = [];
       const sugarLimit = riskCat === 'High Risk' ? 20 : PREGNANCY_NUTRITION_TARGETS.sugarG;
 
       if (riskCat === 'High Risk') {
-        if (newSugar > 8) warnings.push({ severity: 'high', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). High Risk GDM should keep per-meal sugar very low.` });
-        if (newCarbs > 50) warnings.push({ severity: 'high', message: `🍞 Carbs: Adds ${newCarbs.toFixed(1)}g (Today's total: ${(todayTotals.carbs + newCarbs).toFixed(1)}g). This is high for a single meal.` });
+        if (newSugar !== null && newSugar > 8) warnings.push({ severity: 'high', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (estimated amount). High Risk GDM should keep per-meal sugar very low.` });
+        if (newCarbs !== null && newCarbs > 50) warnings.push({ severity: 'high', message: `🍞 Carbs: Adds ${newCarbs.toFixed(1)}g (estimated amount). This is high for a single meal.` });
       } else if (riskCat === 'Moderate Risk') {
-        if (newSugar > 12) warnings.push({ severity: 'medium', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (Today's total: ${(todayTotals.sugar + newSugar).toFixed(1)}g). Consider smaller portions.` });
+        if (newSugar !== null && newSugar > 12) warnings.push({ severity: 'medium', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (estimated amount). Consider smaller portions.` });
       } else if (!riskCat) {
-        if (newSugar > 10) warnings.push({ severity: 'medium', message: `🍬 Sugar: This adds ${newSugar.toFixed(1)}g. (Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g). Is this safe for you?` });
-        if (newCarbs > 60) warnings.push({ severity: 'medium', message: `🍞 Carbs: This adds ${newCarbs.toFixed(1)}g. (Total will be ${(todayTotals.carbs + newCarbs).toFixed(1)}g).` });
+        if (newSugar !== null && newSugar > 10) warnings.push({ severity: 'medium', message: `🍬 Sugar: This adds ${newSugar.toFixed(1)}g. Review this estimate against advice from your care team.` });
+        if (newCarbs !== null && newCarbs > 60) warnings.push({ severity: 'medium', message: `🍞 Carbs: This adds ${newCarbs.toFixed(1)}g. This is an estimated amount.` });
       }
 
-      if (todayTotals.sugar + newSugar > sugarLimit) {
-        if (!warnings.some(w => w.message.includes('Sugar Limit'))) warnings.push({ severity: riskCat === 'High Risk' ? 'high' : 'medium', message: `⚠️ Daily Sugar Limit: Total will be ${(todayTotals.sugar + newSugar).toFixed(1)}g, exceeding your ${sugarLimit}g limit.` });
+      if (newSugar !== null && todayTotals.sugar + newSugar > sugarLimit) {
+        if (!warnings.some(w => w.message.includes('Sugar Limit'))) warnings.push({ severity: riskCat === 'High Risk' ? 'high' : 'medium', message: `⚠️ Sugar Limit: Recorded estimates plus this amount exceed the ${sugarLimit}g guidance used by this diary. Records may be incomplete; review with your care team.` });
       }
 
-      if (todayTotals.carbs + newCarbs > 200) {
-        if (!warnings.some(w => w.message.includes('Carbs'))) warnings.push({ severity: 'medium', message: `🍞 Carbs: Total will reach ${(todayTotals.carbs + newCarbs).toFixed(1)}g today. Consider a lighter option.` });
+      if (newCarbs !== null && todayTotals.carbs + newCarbs > 200) {
+        if (!warnings.some(w => w.message.includes('Carbs'))) warnings.push({ severity: 'medium', message: `🍞 Carbs: Recorded estimates plus this amount exceed the diary guidance. Records may be incomplete. Consider a lighter option.` });
       }
 
-      if (newFat > 20) {
+      if (newFat !== null && newFat > 20) {
         warnings.push({ severity: 'info', message: `🥑 Fat: This food adds ${newFat.toFixed(1)}g of fat. Choose lean options where possible.` });
       }
 
@@ -214,41 +225,28 @@ export default function DetectScreen() {
       // Proceed silently on error
     }
 
-    commitPendingItems(fetchedItems);
+    setPendingMealItems([]);
+    setPendingPreviousMealItems([]);
   };
 
-  // ── Save button animation ───────────────────────────────────
-  const saveBtnScale = useRef(new Animated.Value(1)).current;
-  const saveBtnPulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (mealItems.length > 0 && scanState === 'idle') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(saveBtnPulse, { toValue: 1.025, duration: 1200, useNativeDriver: true }),
-          Animated.timing(saveBtnPulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      saveBtnPulse.setValue(1);
-      saveBtnPulse.stopAnimation();
-    }
-  }, [mealItems.length, scanState]);
-
+  // Check native camera/gallery permissions with visible failure handling.
   useEffect(() => {
     (async () => {
       if (Platform.OS !== 'web') {
         await ImagePicker.requestCameraPermissionsAsync();
         await ImagePicker.requestMediaLibraryPermissionsAsync();
       }
-    })();
+    })().catch((error) => {
+      console.error('Scanner permission request failed:', error);
+      Alert.alert('Camera permissions', 'Camera or photo permissions could not be checked. Please try the camera or gallery again.');
+    });
   }, []);
 
   const resetScanWorkspace = () => {
+    scanRequestId.current += 1;
     setScanState('idle');
     setImageUri(null);
-    setCurrentDetections([]);
-    setSelectedDetectionIds([]);
+    setCorrectionCandidateId(null);
     setErrorMsg(null);
   };
 
@@ -271,7 +269,27 @@ export default function DetectScreen() {
     }
   };
 
+  // Item-scoped versions prevent a delayed lookup from replacing a correction or retry.
+  const loadNutritionForItem = async (item: MealItem, allDetections: readonly RawFoodDetection[] = item.scanDetections ?? item.rawDetections ?? []) => {
+    const version = (referenceVersions.current.get(item.id) ?? 0) + 1;
+    referenceVersions.current.set(item.id, version);
+    setMealItems((previous) => previous.map((current) => current.id === item.id ? { ...current, referenceStatus: 'loading' } : current));
+    try {
+      const food = await mealService.getNutritionForFood(item.foodId);
+      if (!mounted.current || referenceVersions.current.get(item.id) !== version) return;
+      const estimated = createEstimatedPreviewItem(item.id, food, item.foodId, item.confidence, item.rawDetections, allDetections);
+      setMealItems((previous) => previous.map((current) => current.id === item.id && current.foodId === item.foodId
+        ? { ...current, ...estimated, referenceStatus: food ? 'loaded' : 'unmapped' } : current));
+      return { ...item, ...estimated, referenceStatus: food ? 'loaded' as const : 'unmapped' as const };
+    } catch (error) {
+      if (!mounted.current || referenceVersions.current.get(item.id) !== version) return;
+      console.error('Meal preview nutrition lookup failed:', error);
+      setMealItems((previous) => previous.map((current) => current.id === item.id ? { ...current, referenceStatus: 'error' } : current));
+    }
+  };
+
   const processImage = async (uri: string) => {
+    const requestId = ++scanRequestId.current;
     setImageUri(uri);
     setScanState('compressing');
     setErrorMsg(null);
@@ -283,25 +301,29 @@ export default function DetectScreen() {
         { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
       );
 
+      if (requestId !== scanRequestId.current) return;
+      setImageAspectRatio(manipulatedImage.width / manipulatedImage.height);
       setImageUri(manipulatedImage.uri);
       setScanState('analyzing');
 
       const result = await analyzeMealImage(manipulatedImage.uri);
+      if (requestId !== scanRequestId.current) return;
 
       if (result.success && result.count > 0 && result.detections.length > 0) {
-        setCurrentDetections(result.detections);
-
-        // Auto-select detections above 50% confidence
-        const defaultSelected = result.detections
-          .filter((d) => d.confidence > 0.5)
-          .map((d, i) => `${d.food_id}-${i}`);
-
-        setSelectedDetectionIds(
-          defaultSelected.length > 0
-            ? defaultSelected
-            : [`${result.detections[0].food_id}-0`]
-        );
+        const groups = groupDetectionEvidence(result.detections);
+        const items: MealItem[] = groups.map((group, index) => ({
+          ...createEstimatedPreviewItem(`scan-${requestId}-${index}-${Date.now()}`, null, group.foodId, group.confidence),
+          rawDetections: group.detections, scanDetections: result.detections, imageUri: manipulatedImage.uri, timestamp: Date.now(), referenceStatus: 'loading',
+        }));
+        setMealItems((previous) => [...previous, ...items]);
         setScanState('review');
+        setIsLookingUp(true);
+        const resolved = await Promise.all(items.map((item) => loadNutritionForItem(item, result.detections)));
+        if (requestId === scanRequestId.current) {
+          setIsLookingUp(false);
+          const estimatedItems = resolved.flatMap((item) => item?.calculatedNutrients ? [item] : []);
+          if (estimatedItems.length > 0) void checkWarningsAndCommit(estimatedItems);
+        }
       } else if (result.success && result.count === 0) {
         setScanState('no_detection');
       } else {
@@ -309,7 +331,9 @@ export default function DetectScreen() {
         setScanState('error');
       }
     } catch (error) {
-      setErrorMsg('An unexpected error occurred during processing.');
+      if (requestId !== scanRequestId.current) return;
+      console.error('Meal photo processing failed:', error);
+      setErrorMsg('The photo could not be processed. Please choose another photo.');
       setScanState('error');
     }
   };
@@ -322,10 +346,11 @@ export default function DetectScreen() {
         quality: 0.6,
       });
       if (!result.canceled && result.assets[0]) {
-        processImage(result.assets[0].uri);
+        await processImage(result.assets[0].uri);
       }
     } catch (err) {
       console.error(err);
+      setErrorMsg('The camera could not be opened. Try the gallery or check camera permissions.');
       Alert.alert('Camera Error', 'Could not open the camera.');
     }
   };
@@ -338,139 +363,69 @@ export default function DetectScreen() {
         quality: 0.8,
       });
       if (!result.canceled && result.assets[0]) {
-        processImage(result.assets[0].uri);
+        await processImage(result.assets[0].uri);
       }
     } catch (err) {
       console.error(err);
+      setErrorMsg('The photo gallery could not be opened. Please try again.');
       Alert.alert('Gallery Error', 'Could not open the photo gallery.');
     }
   };
 
-  const toggleDetection = (id: string) => {
-    setSelectedDetectionIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
-  const handleUpdateQuantity = (id: string, newQuantity: number) => {
-    setMealItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, servingMultiplier: newQuantity } : item))
-    );
+  const handleUpdateQuantity = (id: string, newQuantity: number | null, unit: PortionUnit) => {
+    const current = mealItems.find((item) => item.id === id);
+    if (!current) return;
+    if (newQuantity === null) {
+      setMealItems((prev) => prev.map((item) => item.id === id ? {
+        ...item,
+        portion: null,
+        calculatedNutrients: null,
+        quantity: {
+          provenance: 'quantity_unknown',
+          initialSuggestion: item.quantity?.initialSuggestion ?? null,
+          reason: 'Choose an amount to see an estimate.',
+          calculationVersion: item.quantity?.calculationVersion ?? 'reference-scaling-v2',
+        },
+      } : item));
+      return;
+    }
+    const result = adjustEstimatedQuantity(current, newQuantity, unit);
+    if (!result.ok) {
+      Alert.alert('Amount unavailable', result.reason === 'invalid_amount' ? 'Enter a portion greater than zero.' : 'This amount is not supported by the food reference serving.');
+      return;
+    }
+    const updated = { ...result.item, timestamp: current.timestamp };
+    setPendingPreviousMealItems([current]);
+    setMealItems((prev) => prev.map((item) => item.id === id ? updated : item));
+    void checkWarningsAndCommit([updated]);
   };
 
   // Commit pending items to the plate (called after warning modal dismissal)
   const commitPendingItems = (items: MealItem[]) => {
-    setMealItems((prev) => {
-      const nextItems = [...prev];
-      for (const fetched of items) {
-        const existingIndex = nextItems.findIndex((i) => i.foodId === fetched.foodId);
-        if (existingIndex >= 0) {
-          nextItems[existingIndex] = {
-            ...nextItems[existingIndex],
-            servingMultiplier: nextItems[existingIndex].servingMultiplier + fetched.servingMultiplier,
-          };
-        } else {
-          nextItems.push(fetched);
-        }
-      }
-      return nextItems;
-    });
-    resetScanWorkspace();
-  };
-
-  const handleAddSelectedToMeal = async () => {
-    if (selectedDetectionIds.length === 0) return;
-
-    setIsLookingUp(true);
-
-    // Group selected detections by food_id to count them
-    const quantityMap: Record<string, { count: number; confidence: number }> = {};
-
-    for (const id of selectedDetectionIds) {
-      const index = parseInt(id.split('-').pop() || '0', 10);
-      const detection = currentDetections[index];
-      if (detection) {
-        if (!quantityMap[detection.food_id]) {
-          quantityMap[detection.food_id] = { count: 0, confidence: detection.confidence };
-        }
-        quantityMap[detection.food_id].count += 1;
-        quantityMap[detection.food_id].confidence = Math.max(
-          quantityMap[detection.food_id].confidence,
-          detection.confidence
-        );
-      }
-    }
-
-    const fetchedItems: MealItem[] = [];
-
-    for (const [foodId, data] of Object.entries(quantityMap)) {
-      const nutritionData = await mealService.getNutritionForFood(foodId);
-      if (nutritionData) {
-        fetchedItems.push({
-          id: Math.random().toString(36).substring(7),
-          foodId: nutritionData.food_id,
-          name: nutritionData.display_name,
-          confidence: data.confidence,
-          imageUri: imageUri || undefined,
-          servingMultiplier: data.count,
-          carbsG: nutritionData.carbs_g || 0,
-          sugarG: nutritionData.sugar_g || 0,
-          fiberG: nutritionData.fiber_g || 0,
-          fatG: nutritionData.fat_g || 0,
-          ironMg: nutritionData.iron_mg || 0,
-          calciumMg: nutritionData.calcium_mg || 0,
-          timestamp: Date.now(),
-        });
-      } else {
-        Alert.alert(
-          'Missing Nutrition Info',
-          `Nutrition data for "${foodId}" is not in our database yet.`
-        );
-      }
-    }
-
-    setIsLookingUp(false);
-
-    if (fetchedItems.length === 0) return;
-
-    // Use shared warning checker
-    checkWarningsAndCommit(fetchedItems);
+    // Estimates already appear inline. Dismissal must not overwrite a newer edit.
+    void items;
+    setPendingMealItems([]);
+    setPendingPreviousMealItems([]);
+    setPendingFoodNames([]);
+    setGdmWarnings([]);
   };
 
   const handleRemoveMealItem = (idToRemove: string) => {
+    referenceVersions.current.delete(idToRemove);
     setMealItems((prev) => prev.filter((item) => item.id !== idToRemove));
   };
 
-  const handleFinishAndSave = async () => {
-    if (mealItems.length === 0) return;
-    if (isSaving) return;
-
-    // Button press animation
-    Animated.sequence([
-      Animated.timing(saveBtnScale, { toValue: 0.96, duration: 100, useNativeDriver: true }),
-      Animated.timing(saveBtnScale, { toValue: 1, duration: 100, useNativeDriver: true }),
-    ]).start();
-
-    setIsSaving(true);
-    try {
-      await mealService.saveMealSession(userId, mealType, selectedDate, mealItems);
-
-      // Show custom elegant modal instead of generic OS alert
-      setShowSuccessModal(true);
-
-    } catch (error: any) {
-      Alert.alert('Error Saving Meal', error.message || 'Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
+  const handleOpenFoodCorrection = (candidateId: string) => {
+    setCorrectionCandidateId(candidateId);
+    setSearchQuery('');
+    setIsSearchModalVisible(true);
   };
-
-  // ── Render: Scan workspace ──────────────────────────────────
 
   const renderScanWorkspace = () => {
     if (scanState === 'idle') {
       return (
-        <View style={{ paddingBottom: 120, paddingTop: 8 }}>
+        <View style={{ paddingBottom: 12, paddingTop: 8 }}>
+          {errorMsg && <Text accessibilityRole="alert" style={{ marginHorizontal: 16, marginBottom: 12, color: '#B91C1C', lineHeight: 20 }}>{errorMsg}</Text>}
           <ScanActionButtons
             onCamera={handleCamera}
             onGallery={handleGallery}
@@ -482,99 +437,20 @@ export default function DetectScreen() {
     }
 
     return (
-      <View style={{ paddingHorizontal: 16, paddingBottom: 120 }}>
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
         {/* Image preview */}
         <MealImagePreview
           imageUri={imageUri!}
+          aspectRatio={imageAspectRatio}
           isAnalyzing={scanState === 'analyzing'}
           isCompressing={scanState === 'compressing'}
         />
 
-        {/* Review state */}
-        {scanState === 'review' && (
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-              <CheckCircle2 size={20} color="#059669" />
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginLeft: 8 }}>
-                AI Detected
-              </Text>
-            </View>
-            <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 16, lineHeight: 20 }}>
-              Tap to select which foods to add to your plate. You can pick multiple.
-            </Text>
-
-            {currentDetections.map((detection, index) => {
-              const uniqueId = `${detection.food_id}-${index}`;
-              const isSelected = selectedDetectionIds.includes(uniqueId);
-
-              return (
-                <DetectionResultCard
-                  key={uniqueId}
-                  foodName={detection.food_id}
-                  confidence={detection.confidence}
-                  isSelected={isSelected}
-                  onToggle={() => toggleDetection(uniqueId)}
-                  imageUri={imageUri}
-                />
-              );
-            })}
-
-            {/* Action buttons */}
-            <View style={{ marginTop: 8 }}>
-              <TouchableOpacity
-                onPress={handleAddSelectedToMeal}
-                disabled={selectedDetectionIds.length === 0 || isLookingUp}
-                activeOpacity={0.85}
-                style={{
-                  borderRadius: 16,
-                  paddingVertical: 16,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'row',
-                  marginBottom: 10,
-                  backgroundColor:
-                    selectedDetectionIds.length > 0 && !isLookingUp ? '#059669' : '#E2E8F0',
-                  shadowColor: '#059669',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: selectedDetectionIds.length > 0 ? 0.3 : 0,
-                  shadowRadius: 10,
-                  elevation: selectedDetectionIds.length > 0 ? 5 : 0,
-                }}
-              >
-                {isLookingUp ? (
-                  <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
-                ) : null}
-                <Text
-                  style={{
-                    fontSize: 16,
-                    fontWeight: '700',
-                    color:
-                      selectedDetectionIds.length > 0 && !isLookingUp ? '#FFFFFF' : '#94A3B8',
-                  }}
-                >
-                  {isLookingUp ? 'Fetching nutrition data...' : '🍽️  Add to Plate'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={resetScanWorkspace}
-                activeOpacity={0.7}
-                style={{
-                  borderRadius: 16,
-                  paddingVertical: 14,
-                  alignItems: 'center',
-                  borderWidth: 1.5,
-                  borderColor: '#E2E8F0',
-                  backgroundColor: '#FFFFFF',
-                }}
-              >
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#64748B' }}>
-                  Retake / Discard
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+        {scanState === 'review' && <View style={{ gap: 8 }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#047857' }}>Foods added to your preview</Text>
+          <Text style={{ fontSize: 13, color: '#64748B', lineHeight: 20 }}>{isLookingUp ? 'Loading food references?' : 'Review estimates above. Adjust amounts inline, Edit a food label, or remove anything incorrect.'}</Text>
+          <TouchableOpacity accessibilityRole="button" disabled={isLookingUp} onPress={resetScanWorkspace} style={{ minHeight: 44, borderRadius: 12, backgroundColor: '#ECFDF5', padding: 12, justifyContent: 'center' }}><Text style={{ color: '#047857', fontWeight: '600' }}>Scan another photo / Search</Text></TouchableOpacity>
+        </View>}
 
         {/* No detection state */}
         {scanState === 'no_detection' && (
@@ -710,7 +586,7 @@ export default function DetectScreen() {
             <Text
               style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}
             >
-              Our AI is looking up nutritional information for your meal.
+              Food estimates will appear automatically. Adjust any incorrect labels or quantities.
             </Text>
             <TouchableOpacity
               onPress={resetScanWorkspace}
@@ -737,7 +613,8 @@ export default function DetectScreen() {
   // ════════════════════════════════════════════════════════════════
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FAF9F6' }}>
+    <KeyboardAvoidingView style={{ flex: 1, minHeight: 0 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} enabled={Platform.OS !== 'web'}>
+    <View style={{ flex: 1, minHeight: 0, backgroundColor: '#FAF9F6' }}>
       {/* Header */}
       <MealScanHeader
         onBack={handleBack}
@@ -746,9 +623,12 @@ export default function DetectScreen() {
       />
 
       <ScrollView
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        ref={scrollRef}
+        style={{ flex: 1, minHeight: 0 }}
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={{ paddingBottom: 32 + Math.max(insets.bottom, 8) }}
       >
         {/* ── Step 1: Date Strip ──────────────────────────── */}
         <View
@@ -802,12 +682,19 @@ export default function DetectScreen() {
         </View>
 
         {/* ── Plate Card ───────────────────────────────────── */}
-        <MealPlateCard
-          items={mealItems}
-          mealType={mealType}
-          onRemoveItem={handleRemoveMealItem}
-          onUpdateQuantity={handleUpdateQuantity}
-        />
+        <View onLayout={(event) => { plateTop.current = event.nativeEvent.layout.y; }}>
+          <MealPlateCard
+            items={mealItems}
+            mealType={mealType}
+            onRemoveItem={handleRemoveMealItem}
+            onUpdateQuantity={handleUpdateQuantity}
+            onEditFood={handleOpenFoodCorrection}
+            onRetryReference={(id) => {
+              const item = mealItems.find((food) => food.id === id);
+              if (item) void loadNutritionForItem(item).then((updated) => { if (updated?.calculatedNutrients) void checkWarningsAndCommit([updated]); });
+            }}
+          />
+        </View>
 
         {/* ── Divider before scan ───────────────────────── */}
         <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
@@ -824,78 +711,13 @@ export default function DetectScreen() {
         {renderScanWorkspace()}
       </ScrollView>
 
-      {/* ── Sticky Save Button (only when items exist & idle) ── */}
-      {mealItems.length > 0 && scanState === 'idle' && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
-            paddingBottom: Platform.OS === 'ios' ? 28 : 16,
-            backgroundColor: '#FFFFFF',
-            borderTopWidth: 1,
-            borderTopColor: '#F5F5F4',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: 0.06,
-            shadowRadius: 12,
-            elevation: 10,
-          }}
-        >
-          <Animated.View style={{ transform: [{ scale: saveBtnScale }, { scale: saveBtnPulse }] }}>
-            <TouchableOpacity
-              onPress={handleFinishAndSave}
-              disabled={isSaving}
-              activeOpacity={0.88}
-              style={{
-                borderRadius: 30, // more rounded, pill-shape
-                paddingVertical: 16,
-                paddingHorizontal: 20,
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexDirection: 'row',
-                backgroundColor: isSaving ? '#10B981' : '#047857', // classic elegant green
-                shadowColor: '#064E3B',
-                shadowOffset: { width: 0, height: 6 },
-                shadowOpacity: 0.2,
-                shadowRadius: 12,
-                elevation: 6,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {isSaving ? (
-                  <ActivityIndicator color="#fff" style={{ marginRight: 12 }} />
-                ) : (
-                  <CheckCircle2 size={22} color="#A7F3D0" style={{ marginRight: 12 }} />
-                )}
-                <Text style={{ fontFamily: 'serif', fontSize: 18, fontWeight: '600', color: '#FFFFFF', letterSpacing: 0.3 }}>
-                  {isSaving
-                    ? 'Saving your meal...'
-                    : `Save ${mealType} Plate`}
-                </Text>
-              </View>
+      {mealItems.length > 0 && <View testID="meal-save-footer" style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 10), backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+        <Text style={{ color: '#64748B', fontSize: 12, lineHeight: 17, textAlign: 'center', marginBottom: 8 }}>Preview only. Saving needs a meal database update.</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: true }} accessibilityLabel="Save Meal. Disabled until meal database support is updated." disabled style={{ minHeight: 48, paddingHorizontal: 16, borderRadius: 14, backgroundColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#475569', fontSize: 15, fontWeight: '700' }}>Save Meal</Text>
+        </TouchableOpacity>
+      </View>}
 
-              {!isSaving && (
-                <View style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <ChevronRight size={18} color="#FFFFFF" strokeWidth={2.5} />
-                </View>
-              )}
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-      )}
-
-      {/* ── Success Modal ──────────────────────────────────────── */}
       <MealSaveSuccessModal
         visible={showSuccessModal}
         mealType={mealType}
@@ -924,13 +746,25 @@ export default function DetectScreen() {
         }}
         onSkip={() => {
           setShowGdmWarning(false);
+          setMealItems((previous) => previous.flatMap((item) => {
+            const oldItem = pendingPreviousMealItems.find((old) => old.id === item.id);
+            if (!pendingMealItems.some((pending) => pending.id === item.id)) return [item];
+            return oldItem?.portion ? [oldItem] : [];
+          }));
           setPendingMealItems([]);
+          setPendingPreviousMealItems([]);
           setPendingFoodNames([]);
           setGdmWarnings([]);
         }}
         onCheckRisk={() => {
           setShowGdmWarning(false);
+          setMealItems((previous) => previous.flatMap((item) => {
+            const oldItem = pendingPreviousMealItems.find((old) => old.id === item.id);
+            if (!pendingMealItems.some((pending) => pending.id === item.id)) return [item];
+            return oldItem?.portion ? [oldItem] : [];
+          }));
           setPendingMealItems([]);
+          setPendingPreviousMealItems([]);
           setPendingFoodNames([]);
           setGdmWarnings([]);
           router.push('/(mother)/gdm-care?tab=gdm');
@@ -980,11 +814,12 @@ export default function DetectScreen() {
       </Modal>
 
       {/* ── Search Food Modal ────────────────────────────────────────────── */}
-      <Modal visible={isSearchModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setIsSearchModalVisible(false)}>
+      <Modal visible={isSearchModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setIsSearchModalVisible(false); setCorrectionCandidateId(null); }}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} enabled={Platform.OS !== 'web'}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-            <TouchableOpacity onPress={() => setIsSearchModalVisible(false)} style={{ padding: 8, marginRight: 8, backgroundColor: '#F1F5F9', borderRadius: 20 }}>
+            <TouchableOpacity onPress={() => { setIsSearchModalVisible(false); setCorrectionCandidateId(null); }} style={{ padding: 8, marginRight: 8, backgroundColor: '#F1F5F9', borderRadius: 20 }}>
               <ArrowLeft size={24} color="#334155" />
             </TouchableOpacity>
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 12, paddingHorizontal: 12 }}>
@@ -1006,9 +841,13 @@ export default function DetectScreen() {
               <ActivityIndicator size="large" color="#059669" />
               <Text style={{ marginTop: 12, color: '#64748B', fontSize: 15 }}>Searching database...</Text>
             </View>
+          ) : searchError ? (
+            <View style={{ padding: 24 }}><Text accessibilityRole="alert" style={{ color: '#B91C1C', lineHeight: 21 }}>{searchError}</Text></View>
           ) : searchResults.length > 0 ? (
             <FlatList
               data={searchResults}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               keyExtractor={(item) => item.food_id}
               contentContainerStyle={{ padding: 16 }}
               renderItem={({ item }) => (
@@ -1059,9 +898,11 @@ export default function DetectScreen() {
               </Text>
             </View>
           )}
+        </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
 
     </View>
+    </KeyboardAvoidingView>
   );
 }

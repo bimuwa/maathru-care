@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { CheckCircle2, Circle } from 'lucide-react-native';
 
 interface DetectionResultCardProps {
@@ -8,6 +8,9 @@ interface DetectionResultCardProps {
   isSelected?: boolean;
   onToggle?: () => void;
   imageUri?: string | null;
+  foodIdOptions?: string[];
+  onCorrectFood?: (foodId: string) => void;
+  onOpenCorrection?: () => void;
 }
 
 export function DetectionResultCard({
@@ -16,6 +19,9 @@ export function DetectionResultCard({
   isSelected = true,
   onToggle,
   imageUri,
+  foodIdOptions = [],
+  onCorrectFood,
+  onOpenCorrection,
 }: DetectionResultCardProps) {
   const percentage = Math.round(confidence * 100);
 
@@ -30,12 +36,16 @@ export function DetectionResultCard({
     percentage >= 80 ? 'High Match' : percentage >= 60 ? 'Good Match' : 'Low Match';
 
   return (
+    <View style={{ marginBottom: 12 }}>
     <TouchableOpacity
       onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: isSelected }}
+      accessibilityLabel={`Select ${formattedName}`}
       activeOpacity={0.82}
       style={{
         borderRadius: 18,
-        marginBottom: 12,
+        marginBottom: 4,
         flexDirection: 'row',
         alignItems: 'center',
         padding: 14,
@@ -52,11 +62,11 @@ export function DetectionResultCard({
       {/* Food thumbnail */}
       <View
         style={{
-          width: 64,
-          height: 64,
+          width: 48,
+          height: 48,
           borderRadius: 14,
           overflow: 'hidden',
-          marginRight: 14,
+          marginRight: 10,
           backgroundColor: '#D1FAE5',
         }}
       >
@@ -80,15 +90,16 @@ export function DetectionResultCard({
       </View>
 
       {/* Info */}
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           style={{
             fontSize: 17,
             fontWeight: '700',
             color: isSelected ? '#065F46' : '#334155',
             marginBottom: 4,
+            lineHeight: 23,
+            flexShrink: 1,
           }}
-          numberOfLines={1}
         >
           {formattedName}
         </Text>
@@ -144,5 +155,21 @@ export function DetectionResultCard({
         )}
       </View>
     </TouchableOpacity>
+    {onOpenCorrection ? <TouchableOpacity accessibilityRole="button" onPress={onOpenCorrection} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 9, marginTop: 5, borderRadius: 14, backgroundColor: '#F0FDF4' }}>
+      <Text style={{ color: '#047857', fontSize: 12, fontWeight: '600' }}>Search to correct this food</Text>
+    </TouchableOpacity> : null}
+    {foodIdOptions.length > 1 && onCorrectFood ? (
+      <View style={{ paddingHorizontal: 4, paddingTop: 4 }}>
+        <Text style={{ color: '#64748B', fontSize: 12, marginBottom: 6 }}>Wrong food? Choose a correction:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {foodIdOptions.map((foodId) => (
+            <TouchableOpacity accessibilityRole="button" key={foodId} onPress={() => onCorrectFood(foodId)} style={{ minHeight: 44, justifyContent: 'center', backgroundColor: foodId === foodName ? '#D1FAE5' : '#FFFFFF', borderColor: '#A7F3D0', borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 9 }}>
+              <Text style={{ color: '#047857', fontSize: 12, fontWeight: '600' }}>{foodId.replace(/_/g, ' ')}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    ) : null}
+    </View>
   );
 }
