@@ -57,7 +57,7 @@ npm run web               # or: npm start (Expo dev server), npm run android, np
 | `EXPO_PUBLIC_CHATBOT_API_MODE` | no | `mock` | `live` calls the chatbot backend; `mock` uses built-in replies |
 | `EXPO_PUBLIC_CHATBOT_API_BASE_URL` | no | `http://localhost:3000` | Chatbot backend URL |
 | `EXPO_PUBLIC_FER_JPEG_QUALITY` | no | `90` | JPEG quality of camera frames sent for mood sensing |
-| `EXPO_PUBLIC_FER_SAMPLE_MS` | no | `3000` | Interval between camera frames, in ms |
+| `EXPO_PUBLIC_FER_SAMPLE_MS` | no | `1000` | Interval between camera frames, in ms |
 
 The chatbot defaults come from `src/features/chatbot/config.ts`.
 

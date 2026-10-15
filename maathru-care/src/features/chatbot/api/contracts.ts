@@ -33,12 +33,14 @@ export type ChatResponse = {
 // adapter in client.ts and the frontend render path are null-safe today and
 // pick the real value up the moment the backend adds it. Do not assume this
 // shape is final; re-check against the actual backend payload once it ships.
+// One modality's own reading (camera or text) for the chat Info popup.
+export type ModalityReading = { state: "calm" | "neutral" | "distressed"; scores: Record<"calm" | "neutral" | "distressed", number> };
 export type ProvisionalChatReplyI1B = {
   id: string;
   role: "assistant";
   created_at: string;
   content: string;
-  mood_debug: { state: MoodState; confidence: number; modalities_used: Modality[]; language_detected: string };
+  mood_debug: { state: MoodState; confidence: number; modalities_used: Modality[]; language_detected: string; modality_breakdown?: { face: ModalityReading | null; text: ModalityReading | null } };
   response_mode: null;
   music_offer?: MusicOffer | null;
 };

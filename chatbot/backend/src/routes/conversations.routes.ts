@@ -15,10 +15,11 @@ import express, { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../auth/authMiddleware.js';
 import { createSupabaseJwks, type TokenVerificationKey } from '../auth/tokens.js';
 import { env } from '../config/env.js';
-import { createConversation, findOwnedConversation } from '../persistence/conversations.js';
+import { createConversation, findOwnedConversation, listConversationSummaries } from '../persistence/conversations.js';
 import { insertMessage, listMessages, listRecentMessages, countMessages } from '../persistence/messages.js';
 import { ensureUser } from '../persistence/users.js';
 import { logger } from '../logging/logger.js';
+import { conversationTitle } from '../conversations/title.js';
 import { sessionStore } from '../capture/sessionStore.js';
 import { UpstreamHttpClient } from '../clients/httpClient.js';
 import { SentimentClient } from '../clients/sentiment.client.js';
@@ -79,6 +80,8 @@ function sessionIdOf(req: Request): string | undefined {
   return raw && raw.trim().length > 0 ? raw.trim() : undefined;
 }
 
+const CONVERSATION_LIST_LIMIT = 50;
+
 function sendConversationNotAccessible(res: Response, conversationId: string, userId: string, diagnostic: 'not_found' | 'wrong_owner'): void {
   logger.warn({ conversationId, userId, diagnostic }, 'conversation lookup denied (TRAP 2 — externally uniform response)');
   res.status(404).json({ error: { code: 'conversation_not_found', message: 'No conversation was found for this id.' } });
@@ -92,6 +95,13 @@ function sendConversationNotAccessible(res: Response, conversationId: string, us
  * factory exists so a test can construct an independent, injected instance
  * without triggering a real network-backed resolver at import time.
  */
+// A failed database call (e.g. the remote database is unreachable) answers 500 instead of
+// becoming an unhandled rejection that stops the whole server.
+function sendInternalError(res: Response, err: unknown): void {
+  logger.error({ errorClass: err instanceof Error ? err.name : 'unknown' }, 'conversation request failed');
+  if (!res.headersSent) res.status(500).json({ error: { code: 'internal_error', message: 'Something went wrong.' } });
+}
+
 export function createConversationsRouter(
   authKey: TokenVerificationKey = createSupabaseJwks(env.SUPABASE_URL),
 ): Router {
@@ -105,7 +115,24 @@ export function createConversationsRouter(
       const conversation = await createConversation(req.userId!);
       logger.info({ conversationId: conversation.id }, 'conversation created');
       res.status(201).json({ id: conversation.id, created_at: conversation.createdAt });
-    })();
+    })().catch((err: unknown) => sendInternalError(res, err));
+  });
+
+  // The caller's own past chats for the chat side panel. Titles are message
+  // text, so they are returned to the owner only and never logged.
+  router.get('/api/v1/conversations', (req: Request, res: Response) => {
+    void (async () => {
+      const summaries = await listConversationSummaries(req.userId!, CONVERSATION_LIST_LIMIT);
+      logger.info({ count: summaries.length }, 'conversations listed');
+      res.status(200).json({
+        conversations: summaries.map((c) => ({
+          id: c.id,
+          title: conversationTitle(c.firstUserMessage),
+          created_at: c.createdAt,
+          last_message_at: c.lastMessageAt,
+        })),
+      });
+    })().catch((err: unknown) => sendInternalError(res, err));
   });
 
   router.get('/api/v1/conversations/:id/messages', (req: Request, res: Response) => {
@@ -122,7 +149,7 @@ export function createConversationsRouter(
       res.status(200).json({
         messages: messages.map((m) => ({ id: m.id, role: m.role, content: m.content, created_at: m.createdAt })),
       });
-    })();
+    })().catch((err: unknown) => sendInternalError(res, err));
   });
 
   router.post('/api/v1/conversations/:id/messages', jsonBody, (req: Request, res: Response) => {
@@ -139,6 +166,12 @@ export function createConversationsRouter(
       const content = (req.body as { content?: unknown } | undefined)?.content;
       if (typeof content !== 'string' || content.length === 0) {
         res.status(400).json({ error: { code: 'content_required', message: 'content is required and must be a non-empty string.' } });
+        return;
+      }
+      // User setting: false = mood from the camera only (sentiment model skipped).
+      const textSensing = (req.body as { text_sensing?: unknown }).text_sensing;
+      if (textSensing !== undefined && typeof textSensing !== 'boolean') {
+        res.status(400).json({ error: { code: 'invalid_body', message: 'text_sensing must be a boolean when present.' } });
         return;
       }
 
@@ -185,7 +218,7 @@ export function createConversationsRouter(
       // the client sends one.
       const sessionId = sessionIdOf(req);
       const moodOutcome = await analyseMood(
-        { sessionId, ownerId: req.userId, text: content },
+        { sessionId, ownerId: req.userId, text: content, textSensing },
         getMoodDeps(),
       );
       if (moodOutcome.kind === 'upstream_unavailable') {
@@ -253,12 +286,14 @@ export function createConversationsRouter(
           confidence,
           modalities_used: moodOutcome.body.modalities_used,
           language_detected: moodOutcome.body.language_detected,
+          // Per-modality readings for the chat Info popup (camera / text).
+          modality_breakdown: moodOutcome.body.modality_breakdown,
         },
         response_mode: null,
         // Mirrors D-1 ChatResponse's music_offer: null unless triggered.
         music_offer: musicOffer,
       });
-    })();
+    })().catch((err: unknown) => sendInternalError(res, err));
   });
 
   return router;

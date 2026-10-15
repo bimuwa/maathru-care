@@ -8,7 +8,6 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
 } from 'react-native';
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api, RegisterData } from '../services/api';
+import { showAlert } from '../lib/alert';
 
 type Step = 'role_details' | 'doctor_select' | 'submitting';
 
@@ -100,7 +100,7 @@ export default function RegisterScreen() {
         setFilteredDoctors(res.doctors);
       }
     } catch {
-      Alert.alert('Error', 'Could not load doctors list. Please try again.');
+      showAlert('Error', 'Could not load doctors list. Please try again.');
     } finally {
       setLoadingDoctors(false);
     }
@@ -205,7 +205,7 @@ export default function RegisterScreen() {
   // Step 2 → Submit approval request to selected doctor
   const handleDoctorSelect = async () => {
     if (!selectedDoctorId) {
-      Alert.alert('Select a Doctor', 'Please tap on a doctor card to select your doctor before continuing.');
+      showAlert('Select a Doctor', 'Please tap on a doctor card to select your doctor before continuing.');
       return;
     }
     setStep('submitting');
@@ -234,7 +234,7 @@ export default function RegisterScreen() {
       router.replace('/(mother)/home');
     } catch (err: any) {
       setStep('doctor_select');
-      Alert.alert('Error', err.message || 'Failed to send request. Please try again.');
+      showAlert('Error', err.message || 'Failed to send request. Please try again.');
     }
   };
 

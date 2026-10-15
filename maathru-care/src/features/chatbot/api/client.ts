@@ -9,20 +9,37 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
-// ⛔ I1-B SCAFFOLDING -- one conversation id per app session, created lazily
-// on first send and reused for the rest of the session's lifetime. This is
-// glue for the provisional reply path only, not a permanent session model.
-let conversationId: string | null = null;
+// The open conversation's id lives in the store: created lazily on the first send,
+// cleared by New chat and logout, and set when a past chat is opened.
 async function getOrCreateConversationId(): Promise<string> {
-  if (conversationId) return conversationId;
+  const current = useAppStore.getState().conversationId;
+  if (current) return current;
   const res = await fetch(`${config.apiBaseUrl}/api/v1/conversations`, {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" }
   });
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   const body = (await res.json()) as { id: string };
-  conversationId = body.id;
-  return conversationId;
+  useAppStore.getState().setConversationId(body.id);
+  return body.id;
+}
+
+export type ConversationSummary = { id: string; title: string; created_at: string; last_message_at: string };
+
+// Past chats for the side panel, most recent first. Mock mode has no history.
+export async function listConversations(): Promise<ConversationSummary[]> {
+  if (config.apiMode === "mock") return [];
+  const res = await fetch(`${config.apiBaseUrl}/api/v1/conversations`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  return ((await res.json()) as { conversations: ConversationSummary[] }).conversations;
+}
+
+// Loads a past chat's messages and makes it the open conversation.
+export async function openConversation(id: string): Promise<void> {
+  const res = await fetch(`${config.apiBaseUrl}/api/v1/conversations/${id}/messages`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  const body = (await res.json()) as { messages: { id: string; role: "user" | "assistant"; content: string }[] };
+  useAppStore.getState().openConversation(id, body.messages.map(m => ({ id: m.id, role: m.role, text: m.content })));
 }
 
 export function createChatApi(getScenario: () => typeof defaultScenario): ChatApi {
@@ -39,10 +56,12 @@ export function createChatApi(getScenario: () => typeof defaultScenario): ChatAp
       const res = await fetch(`${config.apiBaseUrl}/api/v1/conversations/${id}/messages`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json", "x-session-id": request.session_id },
-        body: JSON.stringify({ content: request.text })
+        body: JSON.stringify({ content: request.text, text_sensing: useAppStore.getState().sentimentEnabled })
       });
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       const reply = (await res.json()) as ProvisionalChatReplyI1B;
+      const breakdown = reply.mood_debug.modality_breakdown;
+      useAppStore.getState().setLastReadings({ face: breakdown?.face ?? null, text: breakdown?.text ?? null, language: reply.mood_debug.language_detected });
       // Adapted at the call site (not a rename of ChatResponse -- see
       // contracts.ts). ⛔ `response_mode` is left as the backend's real
       // `null` -- B-1 (M6/M8) is unresolved, so no real mode is guessed. The

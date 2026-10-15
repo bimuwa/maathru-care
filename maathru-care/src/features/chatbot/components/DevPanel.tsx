@@ -1,10 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAppStore, moodLabels, responseLabels } from "../store";
 import { colors, spacing } from "../theme";
-// ⛔ mood.state must NOT appear anywhere in user-facing UI (the mood chip was
-// deliberately removed -- FER misses distress 24.3% of the time and every
-// mood is currently derived from placeholder fusion parameters). This panel
-// is dev-only, gated by the caller behind `showDev`.
+// The fused mood.state stays out of user-facing UI (FER misses distress 24.3%
+// of the time and fusion runs on placeholder parameters). Owner decision
+// 2026-10-15: the separate camera and text readings ARE shown to users in the
+// chat Info popup (MoodInfoModal). This panel is dev-only, behind `showDev`.
 export function DevPanel() {
   const { scenario, setScenario, lastMoodAnalysis, authenticated, authError } = useAppStore();
   return <View style={styles.panel}>

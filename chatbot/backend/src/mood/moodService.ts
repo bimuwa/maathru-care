@@ -58,10 +58,20 @@ export interface MoodAnalyseResponseBody {
   face_frame_count: number;
   session_elapsed_ms: number;
   model_versions: { face: string | null; text: string | null };
+  /** Per-modality readings shown to the user in the chat Info popup: each
+   *  side's own predicted state and its calm/neutral/distressed scores, or
+   *  null when that side contributed nothing this turn. Fusion's result above
+   *  is unchanged by this field. */
+  modality_breakdown: { face: ModalityReading | null; text: ModalityReading | null };
   /** §8.2 guard 3 — present ONLY in non-production, sourced live from fusion's
    *  own GET /health so it can never drift from the parameters actually in
    *  use. Absent (not merely falsy) in production. */
   parameters_provenance?: string;
+}
+
+export interface ModalityReading {
+  state: 'calm' | 'neutral' | 'distressed';
+  scores: Record<'calm' | 'neutral' | 'distressed', number>;
 }
 
 export type AnalyseMoodOutcome =
@@ -96,6 +106,10 @@ export interface AnalyseMoodInput {
   ownerId?: string | undefined;
   text: string;
   correlationId?: string | undefined;
+  /** User setting: `false` skips the sentiment model entirely, so the turn is
+   *  fused from face evidence alone (the same shape as a degraded sentiment
+   *  call). Absent = `true`. Language detection still runs. */
+  textSensing?: boolean | undefined;
 }
 
 const PLACEHOLDER_PROVENANCE_UNAVAILABLE = 'PLACEHOLDER FOR TESTING - NOT A MEASURED VALUE (fusion health check unavailable — provenance could not be confirmed live)';
@@ -146,7 +160,7 @@ export async function analyseMood(
   let textEvidence: TextEvidence | null = null;
   const languageDetected: string = route.languageDetected;
 
-  if (route.route === 'sentiment') {
+  if (route.route === 'sentiment' && input.textSensing !== false) {
     // ⛔ Non-Sinhala never reaches this branch — routeLanguage() only returns
     // 'sentiment' for classification 'si' (Part A step 2).
     const outcome = await deps.sentimentClient.predict(input.text, input.correlationId);
@@ -240,6 +254,10 @@ export async function analyseMood(
     model_versions: {
       face: turnFace.evidence?.model_version ?? null,
       text: textEvidence?.model_version ?? null,
+    },
+    modality_breakdown: {
+      face: turnFace.evidence ? { state: turnFace.evidence.predicted_state, scores: { ...turnFace.evidence.scores } } : null,
+      text: textEvidence ? { state: textEvidence.predicted_state, scores: { ...textEvidence.scores } } : null,
     },
   };
 

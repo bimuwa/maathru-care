@@ -41,7 +41,9 @@ export function useWebCamera(enabled: boolean) {
         streamRef.current = stream;
         setState("on");
       })
-      .catch(() => {
+      .catch((err: any) => {
+        // e.g. NotReadableError = the webcam is in use by another app or tab; NotAllowedError = blocked.
+        console.warn(`[camera] getUserMedia failed: ${err?.name ?? "Error"} ${err?.message ?? ""}`);
         if (!cancelled) setState("denied");
       });
 
