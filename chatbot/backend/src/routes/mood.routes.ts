@@ -102,9 +102,14 @@ async function handleAnalyse(req: Request, res: Response, deps: MoodServiceDeps)
     res.status(400).json({ error: { code: 'text_required', message: 'text is required and must be a string.' } });
     return;
   }
+  const textSensing = (req.body as { text_sensing?: unknown }).text_sensing;
+  if (textSensing !== undefined && typeof textSensing !== 'boolean') {
+    res.status(400).json({ error: { code: 'invalid_body', message: 'text_sensing must be a boolean when present.' } });
+    return;
+  }
 
   try {
-    const outcome = await analyseMood({ sessionId, ownerId: req.userId, text, correlationId }, deps);
+    const outcome = await analyseMood({ sessionId, ownerId: req.userId, text, correlationId, textSensing }, deps);
 
     switch (outcome.kind) {
       case 'ok':

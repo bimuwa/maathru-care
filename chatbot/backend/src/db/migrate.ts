@@ -9,11 +9,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
+import { env } from '../config/env.js';
 import { getPool } from './pool.js';
 
 const MIGRATIONS_DIR = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'migrations');
 
 export async function runMigrations(pool: pg.Pool = getPool()): Promise<{ applied: string[] }> {
+  // The pool already sets search_path to this schema (db/pool.ts); it must exist first.
+  if (env.DATABASE_SCHEMA) await pool.query(`CREATE SCHEMA IF NOT EXISTS "${env.DATABASE_SCHEMA}"`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       name TEXT PRIMARY KEY,

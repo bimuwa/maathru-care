@@ -66,6 +66,16 @@ const envSchema = z.object({
   LLM_HISTORY_TURNS: z.coerce.number().int().min(0).default(3),
 
   DATABASE_URL: z.string().min(1),
+  // Optional Postgres schema for every backend table (e.g. "chatbot" on the shared Supabase
+  // database, which keeps them apart from the app's public tables and out of Supabase's
+  // public Data API). Unset = the server default (public), the local Docker behaviour.
+  DATABASE_SCHEMA: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z
+      .string()
+      .regex(/^[a-z_][a-z0-9_]*$/, 'must be a lowercase SQL identifier')
+      .optional(),
+  ),
   // ★ C7 (revised twice) — Supabase authentication, VERIFICATION ONLY.
   //
   // The project's base URL, e.g. https://<ref>.supabase.co. Its JWKS endpoint
