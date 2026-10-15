@@ -1,4 +1,4 @@
-# IT22638168 — MaternaLink Mood-Aware Conversational Support Component
+# IT22638168 — Maathru Care Mood-Aware Conversational Support Component
 
 **Author:** Livera S.D — IT22638168 · **Project:** R26-IT-146 · **Institution:** SLIIT
 
