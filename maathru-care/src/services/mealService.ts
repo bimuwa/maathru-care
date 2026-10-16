@@ -2,6 +2,47 @@ import { supabase } from '../lib/supabase';
 import { MealItem } from '../types/meal';
 import { assertNewPortionPersistenceSupported, mapFoodNutritionRecord } from './nutritionCalculator';
 
+const diarySelect = 'id, logged_date, meal_type, created_at, food_diary_items(id, item_name, carbs_g, sugar_g, fiber_g, fat_g, iron_mg, calcium_mg)';
+
+function toDiaryLog(meal: any) {
+  const items = meal.food_diary_items ?? [];
+  const sum = (key: string) => {
+    const values = items.map((item: any) => item[key]);
+    const known = values.filter((value: unknown): value is number => typeof value === 'number' && Number.isFinite(value));
+    return known.length ? known.reduce((total, value) => total + value, 0) : null;
+  };
+  const nutrientColumns = [
+    ['carbs_g', 'total_carbs_g'], ['sugar_g', 'total_sugar_g'], ['fiber_g', 'total_fiber_g'],
+    ['fat_g', 'total_fat_g'], ['iron_mg', 'total_iron_mg'], ['calcium_mg', 'total_calcium_mg'],
+  ];
+  const incomplete = nutrientColumns.filter(([itemKey]) => items.some((item: any) => item[itemKey] == null)).map(([, logKey]) => logKey);
+  return {
+    id: `diary:${meal.id}`,
+    logged_date: meal.logged_date,
+    meal_type: meal.meal_type,
+    created_at: meal.created_at,
+    total_carbs_g: sum('carbs_g'),
+    total_sugar_g: sum('sugar_g'),
+    total_fiber_g: sum('fiber_g'),
+    total_fat_g: sum('fat_g'),
+    total_iron_mg: sum('iron_mg'),
+    total_calcium_mg: sum('calcium_mg'),
+    incomplete_nutrients: incomplete,
+    meal_items: items.map((item: any) => ({ ...item, item_name: item.item_name })),
+  };
+}
+
+async function getDiaryLogs(dateFilter: (query: any) => any) {
+  const query = supabase.from('food_diary_meals').select(diarySelect);
+  const { data, error } = await dateFilter(query);
+  if (error) {
+    // Older deployments may not yet have the diary tables. Keep legacy reads usable.
+    if (error.code === '42P01' || error.code === 'PGRST205') return [];
+    throw error;
+  }
+  return (data ?? []).map(toDiaryLog);
+}
+
 export const NEW_PORTION_SAVE_BLOCKED_REASON =
   'Meal saving is temporarily unavailable until the database can store the confirmed portion amount, unit, reference basis, and confirmation status. Your meal preview has not been saved.';
 
@@ -49,7 +90,13 @@ export const mealService = {
       console.error('Error fetching daily nutrition:', error);
       return [];
     }
-    return data;
+    try {
+      const diary = await getDiaryLogs((query) => query.eq('logged_date', localDateStr).order('created_at', { ascending: true }));
+      return [...(data ?? []), ...diary].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    } catch (diaryError) {
+      console.error('Error fetching Food Diary readback:', diaryError);
+      return data ?? [];
+    }
   },
 
   async getWeeklyTrends(userId: string) {
@@ -72,7 +119,13 @@ export const mealService = {
       console.error('Error fetching weekly trends:', error);
       return [];
     }
-    return data;
+    try {
+      const diary = await getDiaryLogs((query) => query.gte('logged_date', sevenDaysAgoStr).lte('logged_date', todayStr).order('logged_date', { ascending: true }));
+      return [...(data ?? []), ...diary].sort((a, b) => String(a.logged_date).localeCompare(String(b.logged_date)) || String(a.created_at).localeCompare(String(b.created_at)));
+    } catch (diaryError) {
+      console.error('Error fetching Food Diary trends:', diaryError);
+      return data ?? [];
+    }
   },
 
   /**
@@ -94,7 +147,7 @@ export const mealService = {
       return { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 };
     }
 
-    return data.reduce(
+    const legacyTotals = data.reduce(
       (acc, log) => ({
         carbs:   acc.carbs   + (log.total_carbs_g   || 0),
         sugar:   acc.sugar   + (log.total_sugar_g   || 0),
@@ -105,5 +158,19 @@ export const mealService = {
       }),
       { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 }
     );
+    try {
+      const diary = await getDiaryLogs((query) => query.eq('logged_date', localDateStr));
+      return diary.reduce((acc: typeof legacyTotals, log: any) => ({
+        carbs: acc.carbs + log.total_carbs_g,
+        sugar: acc.sugar + log.total_sugar_g,
+        fiber: acc.fiber + log.total_fiber_g,
+        fat: acc.fat + log.total_fat_g,
+        iron: acc.iron + log.total_iron_mg,
+        calcium: acc.calcium + log.total_calcium_mg,
+      }), legacyTotals);
+    } catch (diaryError) {
+      console.error('Error fetching Food Diary totals:', diaryError);
+      return legacyTotals;
+    }
   },
 };

@@ -19,8 +19,8 @@ export const QUANTITY_LABELS = {
   user_adjusted: 'Adjusted by you', user_confirmed: 'Confirmed by you', quantity_unknown: 'Choose your amount', legacy_unconfirmed: 'Previous estimate',
 };
 function nutrientText(nutrients: NutrientValues) {
-  const entries = [['carbsG', 'Carbs', 'g'], ['sugarG', 'Sugar', 'g'], ['fiberG', 'Fiber', 'g'], ['fatG', 'Fat', 'g'], ['ironMg', 'Iron', 'mg'], ['calciumMg', 'Calcium', 'mg']] as const;
-  return entries.map(([key, label, unit]) => `${label} ${nutrients[key] === null ? 'unavailable' : `${nutrients[key].toFixed(1)} ${unit}`}`).join(' · ');
+  const entries = [['carbsG', 'Carbohydrates', 'g'], ['sugarG', 'Sugar', 'g'], ['fiberG', 'Fiber', 'g'], ['fatG', 'Fat', 'g'], ['ironMg', 'Iron', 'mg'], ['calciumMg', 'Calcium', 'mg']] as const;
+  return entries.filter(([key]) => nutrients[key] !== null).map(([key, label, unit]) => `${label}: ${nutrients[key]!.toFixed(1)} ${unit}`).join(' · ');
 }
 export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity, onEditFood, onRetryReference }: MealPlateCardProps) {
   const summary = summarizeEstimatedMeal(items);
@@ -42,17 +42,18 @@ export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity,
             </View>}
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove ${name}`} onPress={() => onRemoveItem(item.id)} style={styles.remove}><X size={20} color="#64748B" /></TouchableOpacity>
           </View>
-          {item.referenceStatus === 'loading' ? <Text style={styles.subtitle}>Checking nutrition…</Text> : <>
+          <>
             <InlineQuantityEditor
               item={item}
               onChange={(amount, unit) => onUpdateQuantity(item.id, amount, unit)}
-              onClear={() => onUpdateQuantity(item.id, null, item.portion?.unit as PortionUnit || item.nutritionRecord?.referenceBasis?.unit || 'piece')}
+              onClear={(unit) => onUpdateQuantity(item.id, unit === 'piece' ? 0 : null, unit || item.portion?.unit as PortionUnit || item.nutritionRecord?.referenceBasis?.unit || 'piece')}
             />
-            {item.calculatedNutrients && items.length > 1 && <Text style={styles.nutrients}>This food · {item.portion?.amount} {item.portion?.unit}: {nutrientText(item.calculatedNutrients)}</Text>}
+            {item.referenceStatus === 'loading' && <Text style={styles.subtitle}>Checking nutrition…</Text>}
+            {item.portion && item.portion.amount > 0 && item.calculatedNutrients && nutrientText(item.calculatedNutrients) && <Text style={styles.nutrients}>Estimated Nutrition · {nutrientText(item.calculatedNutrients)}</Text>}
             {!item.nutritionRecord && item.referenceStatus === 'error' && <Text style={styles.unavailable}>Nutrition couldn’t load.</Text>}
-          </>}
+          </>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {onEditFood && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit food for ${name}`} onPress={() => onEditFood(item.id)} style={styles.edit}><Text style={styles.editText}>Edit food</Text></TouchableOpacity>}
+            {onEditFood && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${item.nutritionRecord?.referenceBasis ? 'Edit food' : 'Choose Nutrition Reference'} for ${name}`} onPress={() => onEditFood(item.id)} style={styles.edit}><Text style={styles.editText}>{item.nutritionRecord?.referenceBasis ? 'Edit food' : 'Choose Nutrition Reference'}</Text></TouchableOpacity>}
             {item.referenceStatus === 'error' && onRetryReference && <TouchableOpacity accessibilityRole="button" onPress={() => onRetryReference(item.id)} style={styles.edit}><Text style={styles.editText}>Retry nutrition</Text></TouchableOpacity>}
           </View>
         </View>;

@@ -63,6 +63,7 @@ export interface LoginResponse {
     hospital?: string;
     medicalLicense?: string;
     gravida?: number;
+    approvalStatus?: 'pending' | 'approved' | 'rejected' | 'not_required';
   };
 }
 
@@ -189,6 +190,13 @@ class ApiService {
     this.authToken = token;
   }
 
+  private withTimeout<T>(promise: PromiseLike<T>, label: string, timeoutMs = 15000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${label} timed out. Check your internet connection and try again.`)), timeoutMs);
+      Promise.resolve(promise).then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+    });
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     try {
       const headers: Record<string, string> = {
@@ -218,110 +226,133 @@ class ApiService {
 
   // ─── Auth ───────────────────────────────────────────────────────────────
   public async login(email: string, password: string): Promise<LoginResponse> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .eq('password', password)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(`Database error: ${error.message}`);
+    const { data: auth, error: authError } = await this.withTimeout(
+      supabase.auth.signInWithPassword({ email, password }), 'Sign in',
+    );
+    if (authError) throw authError;
+    if (!auth.session) throw new Error('Sign-in did not establish a Supabase session.');
+    this.setAuthToken(auth.session.access_token);
+    let profileResult;
+    try {
+      profileResult = await this.withTimeout(supabase.from('users')
+        .select('id,email,role,full_name,phone,age,gestational_week,blood_group,approval_status,specialty,hospital,medical_license')
+        .eq('auth_user_id', auth.session.user.id).maybeSingle(), 'Profile loading');
+    } catch (profileError) {
+      await supabase.auth.signOut();
+      this.setAuthToken(null);
+      throw profileError;
     }
-
+    const { data, error } = profileResult;
+    if (error) {
+      await supabase.auth.signOut();
+      this.setAuthToken(null);
+      throw new Error(`Supabase sign-in succeeded, but Maathru Care profile setup is incomplete (${error.message}). Apply migration 202610150003_auth_and_legacy_rls.sql and link existing research accounts before signing in again.`);
+    }
     if (!data) {
-      throw new Error('Invalid email or password');
+      const { error: provisionError } = await supabase.rpc('provision_my_auth_profile');
+      if (provisionError) {
+        await supabase.auth.signOut();
+        this.setAuthToken(null);
+        throw new Error(provisionError.message.includes('existing profile')
+          ? 'An existing research profile uses this email. Ask an administrator to verify ownership and link it; do not create another account.'
+          : 'This Auth account has no Maathru Care profile. Apply migration 202610150003_auth_and_legacy_rls.sql, then sign in again.');
+      }
+      const { data: provisioned, error: reloadError } = await supabase.from('users')
+        .select('id,email,role,full_name,phone,age,gestational_week,blood_group,approval_status,specialty,hospital,medical_license')
+        .eq('auth_user_id', auth.session.user.id).maybeSingle();
+      if (reloadError || !provisioned) {
+        await supabase.auth.signOut();
+        this.setAuthToken(null);
+        throw new Error('Your Auth account exists but its profile could not be loaded. Check the database migration and try again.');
+      }
+      profileResult.data = provisioned;
+    }
+    const activeProfile = profileResult.data;
+    if (!activeProfile) throw new Error('Your profile could not be loaded.');
+    if (activeProfile.role === 'doctor' && activeProfile.approval_status !== 'approved') {
+      await supabase.auth.signOut();
+      this.setAuthToken(null);
+      throw new Error('This doctor account is awaiting administrator approval.');
     }
 
     return {
       success: true,
-      token: data.id, // Using user ID as a simple session token
+      token: auth.session.access_token,
       user: {
-        id: data.id,
-        email: data.email,
-        role: data.role as 'mother' | 'doctor',
-        fullName: data.full_name,
-        age: data.age,
-        gestationalAgeWeeks: data.gestational_week,
-        bloodGroup: data.blood_group,
-        phone: data.phone,
-        approvalStatus: data.approval_status,
-        specialty: data.specialty,
-        hospital: data.hospital,
-        medicalLicense: data.medical_license,
+        id: activeProfile.id,
+        email: activeProfile.email,
+        role: activeProfile.role as 'mother' | 'doctor',
+        fullName: activeProfile.full_name,
+        age: activeProfile.age,
+        gestationalAgeWeeks: activeProfile.gestational_week,
+        bloodGroup: activeProfile.blood_group,
+        phone: activeProfile.phone,
+        approvalStatus: activeProfile.approval_status,
+        specialty: activeProfile.specialty,
+        hospital: activeProfile.hospital,
+        medicalLicense: activeProfile.medical_license,
       } as any
     };
   }
 
   public async register(data: RegisterData): Promise<LoginResponse> {
-    // Check if email already exists
-    const { data: existing, error: checkError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', data.email)
-      .maybeSingle();
-      
-    if (checkError) {
-      throw new Error(`Database error: ${checkError.message}`);
-    }
-
-    if (existing) {
-      throw new Error('Email already registered');
-    }
-
-    const insertData: any = {
-      email: data.email,
-      password: data.password,
-      role: data.role,
-      full_name: data.fullName,
-      phone: data.phone,
+    const fullName = data.fullName.trim();
+    if (!fullName) throw new Error('Full name is required to create your profile.');
+    const metadata: Record<string, unknown> = {
+      maathru_care_signup: 'v1', role: data.role, full_name: fullName, phone: data.phone,
     };
-
-    if (data.role === 'mother') {
-      insertData.age = data.age ? parseInt(data.age, 10) : null;
-      insertData.blood_group = data.bloodGroup || null;
-      insertData.gestational_week = data.gestationalWeek ? parseInt(data.gestationalWeek, 10) : null;
-      insertData.no_of_pregnancy = data.gravida ? parseFloat(data.gravida) : null;
-      insertData.gestation_in_previous_pregnancy = data.gestationInPreviousPregnancy ? parseFloat(data.gestationInPreviousPregnancy) : null;
-      insertData.bmi = data.bmi ? parseFloat(data.bmi) : null;
-      insertData.hdl = data.hdl ? parseFloat(data.hdl) : null;
-      insertData.sys_bp = data.sysBp ? parseFloat(data.sysBp) : null;
-      insertData.dia_bp = data.diaBp ? parseFloat(data.diaBp) : null;
-      insertData.ogtt = data.ogtt ? parseFloat(data.ogtt) : null;
-      insertData.hemoglobin = data.hemoglobin ? parseFloat(data.hemoglobin) : null;
-      
-      insertData.family_history = data.familyHistory !== undefined ? (data.familyHistory ? 1 : 0) : null;
-      insertData.unexplained_prenatal_loss = data.unexplainedPrenatalLoss !== undefined ? (data.unexplainedPrenatalLoss ? 1 : 0) : null;
-      insertData.large_child_or_birth_default = data.largeChildOrBirthDefault !== undefined ? (data.largeChildOrBirthDefault ? 1 : 0) : null;
-      insertData.pcos = data.pcos !== undefined ? (data.pcos ? 1 : 0) : null;
-      insertData.sedentary_lifestyle = data.sedentaryLifestyle !== undefined ? (data.sedentaryLifestyle ? 1 : 0) : null;
-      insertData.prediabetes = data.prediabetes !== undefined ? (data.prediabetes ? 1 : 0) : null;
-    } else if (data.role === 'doctor') {
-      insertData.medical_license = data.medicalLicense;
-      insertData.specialty = data.specialty;
-      insertData.hospital = data.hospital;
-      insertData.approval_status = 'pending';
-    }
-
-    const { data: newUser, error } = await supabase
-      .from('users')
-      .insert([insertData])
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(error.message);
+    if (data.role === 'mother') Object.assign(metadata, {
+      age: data.age ? Number(data.age) : null, blood_group: data.bloodGroup || null,
+      gestational_week: data.gestationalWeek ? Number(data.gestationalWeek) : null,
+      no_of_pregnancy: data.gravida ? Number(data.gravida) : null,
+      gestation_in_previous_pregnancy: data.gestationInPreviousPregnancy ? Number(data.gestationInPreviousPregnancy) : null,
+      bmi: data.bmi ? Number(data.bmi) : null, hdl: data.hdl ? Number(data.hdl) : null,
+      sys_bp: data.sysBp ? Number(data.sysBp) : null, dia_bp: data.diaBp ? Number(data.diaBp) : null,
+      ogtt: data.ogtt ? Number(data.ogtt) : null, hemoglobin: data.hemoglobin ? Number(data.hemoglobin) : null,
+      family_history: data.familyHistory ? 1 : 0, unexplained_prenatal_loss: data.unexplainedPrenatalLoss ? 1 : 0,
+      large_child_or_birth_default: data.largeChildOrBirthDefault ? 1 : 0, pcos: data.pcos ? 1 : 0,
+      sedentary_lifestyle: data.sedentaryLifestyle ? 1 : 0, prediabetes: data.prediabetes ? 1 : 0,
+    });
+    else Object.assign(metadata, { medical_license: data.medicalLicense, specialty: data.specialty, hospital: data.hospital });
+    const { data: auth, error } = await this.withTimeout(supabase.auth.signUp({
+      email: data.email, password: data.password, options: { data: metadata },
+    }), 'Registration');
+    if (error) throw error;
+    if (!auth.session || !auth.user) throw new Error('Check your email to verify your account. After verification, sign in to continue.');
+    this.setAuthToken(auth.session.access_token);
+    const { data: profile, error: profileError } = await this.withTimeout(supabase.from('users')
+      .select('id,email,role,full_name,phone,age,gestational_week,blood_group,approval_status,specialty,hospital,medical_license')
+      .eq('auth_user_id', auth.user.id).maybeSingle(), 'Profile setup');
+    if (profileError) throw new Error(`Your Auth account was created, but profile setup is incomplete (${profileError.message}). Do not register again; apply migration 202610150003_auth_and_legacy_rls.sql, then sign in.`);
+    let activeProfile = profile;
+    if (!activeProfile) {
+      const { error: provisionError } = await supabase.rpc('provision_my_auth_profile');
+      if (provisionError) throw new Error(provisionError.message.includes('existing profile')
+        ? 'Your Auth account was created, but an existing research profile uses this email. Do not register again; ask an administrator to verify ownership and link the account.'
+        : 'Your Auth account was created, but profile provisioning is not installed. Do not register again. Apply migration 202610150003_auth_and_legacy_rls.sql, then sign in to finish setup.');
+      const { data: provisioned, error: reloadError } = await supabase.from('users')
+        .select('id,email,role,full_name,phone,age,gestational_week,blood_group,approval_status,specialty,hospital,medical_license')
+        .eq('auth_user_id', auth.user.id).maybeSingle();
+      if (reloadError || !provisioned) throw new Error('Your Auth account exists, but its profile could not be loaded. Check the database migration before retrying.');
+      activeProfile = provisioned;
     }
 
     return {
       success: true,
-      token: newUser.id,
+      token: auth.session.access_token,
       user: {
-        id: newUser.id,
-        email: newUser.email,
-        role: newUser.role,
-        fullName: newUser.full_name,
-        approvalStatus: newUser.approval_status
+        id: activeProfile.id,
+        email: activeProfile.email,
+        role: activeProfile.role,
+        fullName: activeProfile.full_name,
+        phone: activeProfile.phone,
+        age: activeProfile.age,
+        gestationalAgeWeeks: activeProfile.gestational_week,
+        bloodGroup: activeProfile.blood_group,
+        approvalStatus: activeProfile.approval_status,
+        specialty: activeProfile.specialty,
+        hospital: activeProfile.hospital,
+        medicalLicense: activeProfile.medical_license,
       } as any
     };
   }
@@ -423,10 +454,7 @@ class ApiService {
       hospital: string; medicalLicense: string; phone: string;
     }>;
   }> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, full_name, specialty, hospital, medical_license, phone')
-      .eq('role', 'doctor');
+    const { data, error } = await supabase.rpc('get_approved_doctors');
 
     if (error) {
       throw new Error(error.message);
@@ -434,7 +462,7 @@ class ApiService {
 
     return {
       success: true,
-      doctors: (data || []).map(d => ({
+      doctors: (data || []).map((d: any) => ({
         id: d.id,
         fullName: d.full_name,
         specialty: d.specialty || '',
@@ -450,17 +478,8 @@ class ApiService {
     patientBloodGroup: string; patientGestationalWeeks: number;
     patientPhone: string; patientEmail: string; doctorId: string;
   }): Promise<{ success: boolean; request: any }> {
-    const { error } = await supabase
-      .from('users')
-      .update({
-        assigned_doctor_id: data.doctorId,
-        approval_status: 'pending'
-      })
-      .eq('id', data.patientId);
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    const { error } = await supabase.rpc('request_doctor_assignment', { p_doctor_id: data.doctorId });
+    if (error) throw new Error(error.message);
 
     return { success: true, request: { status: 'pending' } };
   }

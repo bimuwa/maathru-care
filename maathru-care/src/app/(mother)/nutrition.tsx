@@ -11,12 +11,10 @@ import {
   ShieldAlert, RefreshCw, Zap, Activity, Info, Check, TrendingUp,
   Camera, ChevronLeft, ChevronRight, CalendarX
 } from 'lucide-react-native';
-import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { mealService } from '@/services/mealService';
-import { gdmRiskService } from '@/services/gdmRiskService';
+import { GDM_REQUIRED_FIELDS, gdmRiskService } from '@/services/gdmRiskService';
 import { gdmCacheService, GDMCacheEntry } from '@/services/gdmCacheService';
-import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
 import { useAuth } from '@/context/AuthContext';
 import { GDMRiskResponse } from '@/types/gdm';
 
@@ -29,7 +27,6 @@ const { width } = Dimensions.get('window');
 type Tab = 'daily' | 'weekly' | 'gdm';
 
 // ─── Constants & Colors ───────────────────────────────────────────────────────
-const GDM_HIGH_SUGAR_LIMIT = 20;
 
 const COLORS = {
   primary: '#059669',
@@ -82,56 +79,6 @@ function getGestationalText(week: number | undefined) {
 }
 
 // ─── SVG Components ───────────────────────────────────────────────────────────
-const SemiCircleGauge = ({ current, target, color = COLORS.primary }: { current: number, target: number, color?: string }) => {
-  const size = 200;
-  const strokeWidth = 14;
-  const radius = (size - strokeWidth) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circumference = radius * Math.PI;
-
-  const pct = Math.min(current / target, 1);
-  const strokeDashoffset = circumference - pct * circumference;
-
-  return (
-    <View style={{ width: size, height: size / 2 + 10, alignItems: 'center' }}>
-      <Svg width={size} height={size / 2} viewBox={`0 0 ${size} ${size / 2}`}>
-        <Defs>
-          <LinearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor={color} stopOpacity="0.8" />
-            <Stop offset="100%" stopColor={color} stopOpacity="1" />
-          </LinearGradient>
-        </Defs>
-        <Path
-          d={`M ${strokeWidth / 2} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
-          fill="none"
-          stroke="#F1F5F9"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-        />
-        <Path
-          d={`M ${strokeWidth / 2} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
-          fill="none"
-          stroke="url(#gaugeGrad)"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-        />
-      </Svg>
-      <View style={{ position: 'absolute', bottom: 5, alignItems: 'center' }}>
-        <Text style={{ fontSize: 32, fontWeight: '700', color: COLORS.textHeader, lineHeight: 36 }}>
-          {current.toLocaleString()}
-        </Text>
-        <Text style={{ fontSize: 13, color: COLORS.textMuted, fontWeight: '500' }}>
-          / {target.toLocaleString()} kcal
-        </Text>
-      </View>
-    </View>
-  );
-};
-
-// ─── Sub-Components ───────────────────────────────────────────────────────────
 const SegmentedControl = ({ active, onChange }: { active: Tab, onChange: (t: Tab) => void }) => {
   const tabs: { key: Tab, label: string }[] = [
     { key: 'daily', label: 'Daily' },
@@ -157,42 +104,6 @@ const SegmentedControl = ({ active, onChange }: { active: Tab, onChange: (t: Tab
           </TouchableOpacity>
         );
       })}
-    </View>
-  );
-};
-
-const NutrientRing = ({ label, current, target, unit, color, isUpperLimit }: any) => {
-  const rawPct = current / target;
-  const pct = Math.min(rawPct, 1);
-  const size = 56;
-  const stroke = 6;
-  const radius = (size - stroke) / 2;
-  const circ = 2 * Math.PI * radius;
-  const offset = circ - pct * circ;
-
-  const isExceeded = isUpperLimit && current > target;
-  const displayColor = isExceeded ? COLORS.accent : color;
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-      <View style={{ width: size, height: size, marginRight: 12 }}>
-        <Svg width={size} height={size}>
-          <Circle cx={size / 2} cy={size / 2} r={radius} stroke="#F1F5F9" strokeWidth={stroke} fill="none" />
-          <Circle
-            cx={size / 2} cy={size / 2} r={radius}
-            stroke={displayColor} strokeWidth={stroke} fill="none"
-            strokeDasharray={circ} strokeDashoffset={offset}
-            strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          />
-        </Svg>
-        <View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: isExceeded ? COLORS.accent : COLORS.textHeader }}>{Math.round(rawPct * 100)}%</Text>
-        </View>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: isExceeded ? COLORS.accent : COLORS.textMain }}>{label}</Text>
-        <Text style={{ fontSize: 13, color: isExceeded ? COLORS.accent : COLORS.textMuted }}>{current.toFixed(1)} / {target} {unit}</Text>
-      </View>
     </View>
   );
 };
@@ -337,7 +248,7 @@ export default function WellnessScreen() {
         return;
       }
       const result = await gdmRiskService.assessRisk(profile);
-      const gestationalWeek = profile.gestational_week || 24;
+      const gestationalWeek = profile.gestational_week ?? null;
       const entry = await gdmCacheService.save(userId, result, gestationalWeek);
       setGdmCache(entry);
       setGdmExpired(false);
@@ -423,68 +334,32 @@ export default function WellnessScreen() {
       );
     }
 
-    const tVals = dailyData.reduce(
-      (acc, log) => ({
-        carbs: acc.carbs + (log.total_carbs_g || 0),
-        sugar: acc.sugar + (log.total_sugar_g || 0),
-        fiber: acc.fiber + (log.total_fiber_g || 0),
-        fat: acc.fat + (log.total_fat_g || 0),
-        iron: acc.iron + (log.total_iron_mg || 0),
-        calcium: acc.calcium + (log.total_calcium_mg || 0),
-      }),
-      { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 }
-    );
-    const estKcal = Math.round((tVals.carbs * 4) + (tVals.fat * 9) + 200);
-
-    const isHighRisk = gdmCache?.result.riskCategory === 'High Risk';
-    const sugarTarget = isHighRisk ? GDM_HIGH_SUGAR_LIMIT : PREGNANCY_NUTRITION_TARGETS.sugarG;
-    const sugarStatus = tVals.sugar > sugarTarget ? 'exceeded' : tVals.sugar > sugarTarget * 0.75 ? 'attention' : 'normal';
-
-    const getMovementRecommendation = () => {
-      if (sugarStatus === 'exceeded') return { show: true, title: 'Gentle Movement', text: 'A short, comfortable walk is a simple way to stay active and support balance.' };
-      if (sugarStatus === 'attention') return { show: true, title: 'Light Activity', text: 'A 10-minute stroll after your meal helps maintain steady energy levels.' };
-      if (tVals.carbs > PREGNANCY_NUTRITION_TARGETS.carbsG) return { show: true, title: 'Energy Balance', text: 'A gentle walk can be a great way to utilize your energy after a satisfying meal.' };
-      if (tVals.iron > 0 && tVals.iron < PREGNANCY_NUTRITION_TARGETS.ironMg * 0.3) return { show: true, title: 'Listen to Your Body', text: 'If you are feeling a bit tired, gentle stretching or resting is perfectly fine today.' };
-      return { show: false, title: '', text: '' };
-    };
-    const movement = getMovementRecommendation();
+    const nutrientFields = [
+      ['total_carbs_g', 'Carbohydrates', 'g'], ['total_sugar_g', 'Total sugar', 'g'],
+      ['total_fiber_g', 'Fiber', 'g'], ['total_fat_g', 'Fat', 'g'],
+      ['total_iron_mg', 'Iron', 'mg'], ['total_calcium_mg', 'Calcium', 'mg'],
+    ] as const;
+    const summary = nutrientFields.map(([key, label, unit]) => {
+      const values = dailyData.map((log: any) => typeof log[key] === 'number' && Number.isFinite(log[key]) ? log[key] as number : null);
+      const known = values.filter((value): value is number => value !== null);
+      return { label, unit, value: known.length ? known.reduce((sum, value) => sum + value, 0) : null, known: known.length, total: values.length, partial: known.length < values.length || dailyData.some((log: any) => log.incomplete_nutrients?.includes(key)) };
+    });
+    const orderedUpdates = dailyData.map((log: any) => log.created_at).filter(Boolean).sort();
+    const lastUpdate = orderedUpdates[orderedUpdates.length - 1];
 
     return (
       <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
-        <View style={[s.card, { alignItems: 'center' }]}>
-          <Text style={s.cardTitleCentered}>{isToday ? "Today's Nutrition" : `${formatDate(dateIso)} Nutrition`}</Text>
-          <SemiCircleGauge current={estKcal} target={1800} color={COLORS.primary} />
-        </View>
-
-        <View style={s.cardRow}>
-          <View style={[s.cardHalf, { backgroundColor: sugarStatus === 'exceeded' ? COLORS.accentBg : sugarStatus === 'attention' ? COLORS.amberBg : COLORS.primaryBg }]}>
-            <Text style={s.smallTitle}>Glycemic Balance</Text>
-            <Text style={[s.statusBig, { color: sugarStatus === 'exceeded' ? COLORS.accent : sugarStatus === 'attention' ? COLORS.amber : COLORS.primary }]}>
-              {sugarStatus === 'exceeded' ? 'Target Exceeded' : sugarStatus === 'attention' ? 'Needs Attention' : 'On Track'}
-            </Text>
-            <Text style={s.tinyDesc}>{tVals.sugar.toFixed(1)} / {sugarTarget}g sugar</Text>
-          </View>
-          {movement.show && (
-            <View style={[s.cardHalf, { backgroundColor: '#F8FAFC' }]}>
-              <Text style={s.smallTitle}>{movement.title}</Text>
-              <Text style={s.movementText}>{movement.text}</Text>
-            </View>
-          )}
-        </View>
-
         <View style={s.card}>
-          <Text style={s.cardTitle}>Nutrient Balance</Text>
-          <View style={{ flexDirection: 'row' }}>
-            <View style={{ flex: 1 }}>
-              <NutrientRing label="Iron" current={tVals.iron} target={PREGNANCY_NUTRITION_TARGETS.ironMg} unit="mg" color={COLORS.amber} />
-              <NutrientRing label="Calcium" current={tVals.calcium} target={PREGNANCY_NUTRITION_TARGETS.calciumMg} unit="mg" color={COLORS.secondary} />
-              <NutrientRing label="Fiber" current={tVals.fiber} target={PREGNANCY_NUTRITION_TARGETS.fiberG} unit="g" color={COLORS.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <NutrientRing label="Carbs" current={tVals.carbs} target={PREGNANCY_NUTRITION_TARGETS.carbsG} unit="g" color={COLORS.primaryLight} />
-              <NutrientRing label="Sugar" current={tVals.sugar} target={sugarTarget} unit="g" color={COLORS.amber} isUpperLimit={true} />
-            </View>
-          </View>
+          <Text style={s.cardTitleCentered}>{isToday ? "Today's Overview" : `${formatDate(dateIso)} Overview`}</Text>
+          <Text style={s.emptySubtitle}>{dailyData.length} meals logged{lastUpdate ? ` - Last updated ${formatLocalTime(lastUpdate)}` : ''}</Text>
+          <Text style={[s.tinyDesc, { textAlign: 'center', marginTop: 8 }]}>Food nutrient values are estimates where available. Missing values remain unreported. Calorie totals are unavailable for these records.</Text>
+        </View>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>Recorded Nutrients</Text>
+          {summary.map((row) => <View key={row.label} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+            <Text style={{ color: COLORS.textMain, fontWeight: '600' }}>{row.label}</Text>
+            <Text style={{ color: COLORS.textMuted }}>{row.value === null ? 'Not recorded' : `${row.value.toFixed(1)} ${row.unit}${row.partial ? ` - partial coverage (${row.known}/${row.total} meals recorded)` : ''}`}</Text>
+          </View>)}
         </View>
 
         <Text style={s.sectionTitle}>Meals</Text>
@@ -579,7 +454,7 @@ export default function WellnessScreen() {
     const last7DaysData = Array(7).fill(0).map((_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(d);
       const logs = weeklyData.filter(w => w.logged_date === dateStr);
       return {
         date: dateStr,
@@ -614,7 +489,7 @@ export default function WellnessScreen() {
         <View style={s.card}>
           <Text style={s.cardTitle}>This week's insight</Text>
           <Text style={s.insightDesc}>
-            Your tracking is consistent. Based on this week, focus on maintaining balanced complex carbohydrates to support steady energy levels.
+            Values summarize logged estimates only. Empty days and nutrients not recorded in a meal are not evidence of zero intake. Follow your maternity care provider's individualized guidance.
           </Text>
         </View>
       </View>
@@ -628,10 +503,7 @@ export default function WellnessScreen() {
     const hasValidCache = gdmCache && !gdmExpired;
     const result: GDMRiskResponse | undefined = gdmCache?.result;
 
-    const fields = [
-      'age', 'gestational_week', 'no_of_pregnancy', 'bmi',
-      'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin'
-    ];
+    const fields = GDM_REQUIRED_FIELDS;
     let filled = 0;
     if (maternalProfile) {
       filled = fields.filter(f => maternalProfile[f] !== undefined && maternalProfile[f] !== null).length;

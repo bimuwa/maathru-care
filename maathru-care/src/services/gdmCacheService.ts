@@ -21,7 +21,7 @@ export interface GDMCacheEntry {
   result: GDMRiskResponse;
   checkedAt: string;        // ISO date string
   nextCheckDate: string;    // ISO date string
-  gestationalWeekAtCheck: number;
+  gestationalWeekAtCheck: number | null;
 }
 
 export interface GDMCacheLoadResult {
@@ -41,12 +41,12 @@ function cacheKey(userId: string) {
  */
 function reCheckIntervalDays(
   riskCategory: GDMRiskResponse['riskCategory'],
-  gestationalWeek: number
+  gestationalWeek: number | null
 ): number {
   if (riskCategory === 'High Risk') return 14;
   if (riskCategory === 'Moderate Risk') return 28;
   // Low Risk
-  if (gestationalWeek < 24) {
+  if (gestationalWeek !== null && gestationalWeek < 24) {
     // next milestone: week 24 screening window
     // estimate days to week 24
     const weeksRemaining = 24 - gestationalWeek;
@@ -75,7 +75,7 @@ export const gdmCacheService = {
   async save(
     userId: string,
     result: GDMRiskResponse,
-    gestationalWeek: number
+    gestationalWeek: number | null
   ): Promise<GDMCacheEntry> {
     const now = new Date().toISOString();
     const intervalDays = reCheckIntervalDays(result.riskCategory, gestationalWeek);

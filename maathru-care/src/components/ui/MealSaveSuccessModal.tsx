@@ -112,7 +112,7 @@ export function MealSaveSuccessModal({
               paddingHorizontal: 10,
             }}
           >
-            Your <Text style={{ fontWeight: '600', color: '#334155' }}>{mealType.toLowerCase()}</Text> has been saved successfully. Check Wellness to see your nutrition totals.
+            Your <Text style={{ fontWeight: '600', color: '#334155' }}>{mealType.toLowerCase()}</Text> has been saved to Food Diary for the selected date.
           </Text>
 
           {/* Action Buttons */}
@@ -135,7 +135,7 @@ export function MealSaveSuccessModal({
               }}
             >
               <Text style={{ fontFamily: 'serif', fontSize: 16, fontWeight: '600', color: '#FFFFFF', marginRight: 8, letterSpacing: 0.3 }}>
-                View Wellness
+                View saved meals
               </Text>
               <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.5} />
             </TouchableOpacity>
@@ -156,7 +156,7 @@ export function MealSaveSuccessModal({
             >
               <Plus size={18} color="#64748B" strokeWidth={2.5} style={{ marginRight: 8 }} />
               <Text style={{ fontFamily: 'serif', fontSize: 16, fontWeight: '600', color: '#64748B', letterSpacing: 0.3 }}>
-                Scan More Food
+                Scan Another Food
               </Text>
             </TouchableOpacity>
           </View>

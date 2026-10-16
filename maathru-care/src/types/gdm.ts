@@ -1,6 +1,7 @@
 export interface GDMRiskRequest {
   age: number;
-  gestational_week: number;
+  /** Used for care timing and cache scheduling, not sent to the inference API. */
+  gestational_week?: number;
   no_of_pregnancy: number;
   gestation_in_previous_pregnancy: number;
   bmi: number;

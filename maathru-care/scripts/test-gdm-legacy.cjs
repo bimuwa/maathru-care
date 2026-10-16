@@ -35,6 +35,15 @@ test('malformed results never fabricate probabilities', async () => {
     assert.equal(app.timer(), 0);
   }
 });
+test('incomplete or invalid clinical profiles stop before inference', async () => {
+  let calls = 0;
+  const app = load(async () => { calls++; return { ok: true, json: async () => ({}) }; });
+  const missingBmi = { ...payload, bmi: null };
+  await assert.rejects(app.service.assessRisk(missingBmi), /Incomplete clinical profile.*bmi/);
+  await assert.rejects(app.service.assessRisk({ ...payload, age: Number.NaN }), /Incomplete clinical profile.*age/);
+  await assert.rejects(app.service.assessRisk({ ...payload, pcos: 2 }), /Invalid clinical profile values.*pcos/);
+  assert.equal(calls, 0);
+});
 test('HTTP failures keep useful messages and clear timeout', async () => {
   for (const status of [422, 500, 503]) {
     const app = load(async () => ({ ok: false, status }));

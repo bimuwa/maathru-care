@@ -40,6 +40,12 @@ function overlap(a: NonNullable<RawFoodDetection['box']>, b: NonNullable<RawFood
 }
 
 export const COUNT_POLICY_VERSION = 'distinct-boxes-v1-experimental';
+// These detector identities describe individual countable foods. This list
+// supplies a UI unit only; it is never treated as a nutrition or weight source.
+const COUNTABLE_DETECTED_FOODS = new Set(['chicken_cutlet', 'vegetable_roll', 'asmi', 'bun', 'egg']);
+export function isKnownCountableFood(foodId: string): boolean {
+  return COUNTABLE_DETECTED_FOODS.has(foodId.trim().toLowerCase().replace(/[\s-]+/g, '_'));
+}
 /** Heuristic eligibility thresholds, NOT calibrated probabilities of count accuracy. */
 export function suggestDistinctCount(detections: readonly RawFoodDetection[], allDetections: readonly RawFoodDetection[] = detections): { count: number | null; reason: string } {
   if (!detections.length || detections.some((d) => !validBox(d.box) || !Number.isFinite(d.confidence) || d.confidence < 0.6 || d.confidence > 1)) {
@@ -68,33 +74,35 @@ export function createEstimatedPreviewItem(
 ): PortionPreviewItem & { quantity: QuantityEvidence } {
   if (food && food.foodId.trim().toLowerCase() !== foodId.trim().toLowerCase()) food = null;
   const item = createPortionPreviewItem(id, food, foodId, confidence);
-  let suggestion: QuantityEvidence['initialSuggestion'] = null;
   let reason = 'Choose a food with a documented serving reference.';
   const basis = food?.referenceBasis;
-  const exactEvidence = detections.filter((d) => d.food_id.trim().toLowerCase() === food?.foodId.toLowerCase());
-  if (basis?.unit === 'piece' && !food!.foodId.toLowerCase().includes('curry')) {
-    const count = suggestDistinctCount(exactEvidence, allDetections);
-    reason = count.reason;
-    if (count.count !== null) suggestion = { amount: count.count, unit: 'piece', provenance: 'ai_count_suggested' };
-  } else if (basis && (basis.unit === 'cup' || basis.unit === 'piece')) {
-    suggestion = { amount: basis.amount, unit: basis.unit, provenance: 'standard_serving_assumed' };
-    reason = `Assumes the documented ${basis.sourceText} serving, not a measured amount.`;
-  } else if (basis?.unit === 'g') {
-    reason = 'Reference is per 100 g only. Enter an amount; the photo cannot measure weight.';
-  }
-  const calculation = food && suggestion ? calculateEstimatedPortion(food, suggestion) : null;
-  // Invalid zero/overflow reference quantities must never become active suggestions.
-  if (!calculation?.ok) suggestion = null;
+  const countable = basis?.unit === 'piece' || (!basis && isKnownCountableFood(foodId));
+  if (countable) reason = 'Tap + to select your portion.';
+  else if (basis?.unit === 'g') reason = 'Enter grams; the photo cannot measure weight.';
+  else if (basis?.unit === 'cup') reason = 'Enter your cup amount; the photo cannot measure volume.';
   return {
     ...item,
-    portion: calculation?.ok ? calculation.portion : null,
-    calculatedNutrients: calculation?.ok ? calculation.nutrients : null,
-    quantity: { provenance: suggestion?.provenance ?? 'quantity_unknown', initialSuggestion: suggestion, reason, calculationVersion: NUTRITION_CALCULATION_VERSION },
+    portion: countable ? { amount: 0, unit: 'piece', confirmedByUser: false } : null,
+    calculatedNutrients: null,
+    quantity: { provenance: 'quantity_unknown', initialSuggestion: null, reason, calculationVersion: NUTRITION_CALCULATION_VERSION },
   };
 }
 
 export function adjustEstimatedQuantity<T extends PortionPreviewItem>(item: T, amount: number, unit: PortionUnit) {
-  if (!item.nutritionRecord) return { ok: false as const, reason: 'reference_basis_unknown' };
+  if (amount === 0 && unit === 'piece' && (!item.nutritionRecord?.referenceBasis || item.nutritionRecord.referenceBasis.unit === 'piece')) {
+    return { ok: true as const, item: { ...item, portion: { amount: 0, unit: 'piece', confirmedByUser: false }, calculatedNutrients: null,
+      quantity: { ...item.quantity, provenance: 'quantity_unknown' as const, initialSuggestion: null,
+        reason: 'Tap + to select your portion.', calculationVersion: NUTRITION_CALCULATION_VERSION } } };
+  }
+  if (!item.nutritionRecord?.referenceBasis) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10000 || (unit === 'piece' && !Number.isInteger(amount))) {
+      return { ok: false as const, reason: 'invalid_amount' };
+    }
+    if (!['g', 'cup', 'piece'].includes(unit)) return { ok: false as const, reason: 'unsupported_unit' };
+    return { ok: true as const, item: { ...item, portion: { amount, unit, confirmedByUser: false }, calculatedNutrients: null,
+      quantity: { ...item.quantity, provenance: 'user_adjusted' as const, initialSuggestion: item.quantity?.initialSuggestion ?? null,
+        reason: 'Amount adjusted by you. Nutrition is unavailable until a supported reference is selected.', calculationVersion: NUTRITION_CALCULATION_VERSION } } };
+  }
   const result = calculateEstimatedPortion(item.nutritionRecord, { amount, unit });
   if (!result.ok) return result;
   return { ok: true as const, item: { ...item, portion: result.portion, calculatedNutrients: result.nutrients,

@@ -26,17 +26,17 @@ import { MealTypePicker, getSmartMealDefault } from '@/components/ui/MealTypePic
 import { ScanActionButtons } from '@/components/ui/ScanActionButtons';
 import { MealImagePreview } from '@/components/ui/MealImagePreview';
 import { MealSaveSuccessModal } from '@/components/ui/MealSaveSuccessModal';
-import { GDMFoodWarningModal, FoodWarning } from '@/components/ui/GDMFoodWarningModal';
+import { FoodDiaryAuthModal } from '@/components/ui/FoodDiaryAuthModal';
+import { FoodDiaryHistory } from '@/components/ui/FoodDiaryHistory';
 
 // API & Services
 import { supabase } from '@/lib/supabase';
 import { analyzeMealImage } from '@/services/api/foodDetector';
 import { useAuth } from '@/context/AuthContext';
+import { foodDiaryService, newDiaryRequestId } from '@/services/foodDiaryService';
 import { mealService } from '@/services/mealService';
 import { gdmCacheService } from '@/services/gdmCacheService';
 import { ScanState, MealItem } from '@/types/meal';
-import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
-import { GDMRiskResponse } from '@/types/gdm';
 import {
   mapFoodNutritionRecord,
   type PortionUnit,
@@ -78,10 +78,11 @@ export default function DetectScreen() {
     }, [userId])
   );
 
-  const { date } = useLocalSearchParams<{ date?: string }>();
+  const { date, viewDiary } = useLocalSearchParams<{ date?: string; viewDiary?: string }>();
 
   // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
+  const hasSelectedPortion = mealItems.some((item) => item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0);
   const previousPlateCount = useRef(0);
   useEffect(() => {
     if (mealItems.length > previousPlateCount.current) {
@@ -100,6 +101,11 @@ export default function DetectScreen() {
 
   const [selectedDate, setSelectedDate] = useState<Date>(initialDate);
 
+  // A dashboard deep link can reach an already mounted scanner route.
+  useEffect(() => {
+    if (date) setSelectedDate(initialDate);
+  }, [date, initialDate]);
+
   // ── Active scan state ───────────────────────────────────────
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -109,14 +115,78 @@ export default function DetectScreen() {
   // ── Loading states ──────────────────────────────────────────
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [diarySession, setDiarySession] = useState<{ user: { id: string; email?: string } } | null>(null);
+  const [isDiaryReady, setIsDiaryReady] = useState(false);
+  const [isCheckingDiarySetup, setIsCheckingDiarySetup] = useState(false);
+  const [showDiaryAuth, setShowDiaryAuth] = useState(false);
+  const [isSavingMeal, setIsSavingMeal] = useState(false);
+  const [savedMealsRefresh, setSavedMealsRefresh] = useState(0);
+  const saveRequest = useRef<{ id: string; signature: string } | null>(null);
+  const saveInFlight = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    void foodDiaryService.getSession().then((session) => { if (active) setDiarySession(session); }).catch((error) => {
+      console.warn('[FoodDiary] Could not restore diary session:', error);
+    });
+    const { data: { subscription } } = foodDiaryService.onAuthStateChange((session) => {
+      if (active) setDiarySession(session);
+    });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!diarySession?.user?.id) { setIsDiaryReady(false); setIsCheckingDiarySetup(false); return; }
+    setIsCheckingDiarySetup(true);
+    void foodDiaryService.checkReady().then((ready) => { if (active) setIsDiaryReady(ready); })
+      .catch(() => { if (active) setIsDiaryReady(false); })
+      .finally(() => { if (active) setIsCheckingDiarySetup(false); });
+    return () => { active = false; };
+  }, [diarySession?.user?.id]);
+
+  const handleSaveMeal = async () => {
+    const selectedItems = mealItems.filter((item) => item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0);
+    if (saveInFlight.current || isSavingMeal || selectedItems.length === 0) return;
+    if (!diarySession?.user?.id) { setShowDiaryAuth(true); return; }
+    if (!isDiaryReady) { Alert.alert('Diary setup incomplete', 'Food Diary saving is enabled after the database migration is applied and verified.'); return; }
+    const localDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+    const signature = JSON.stringify({
+      date: localDate,
+      mealType,
+      items: selectedItems.map((item) => ({
+        id: item.id,
+        foodId: item.nutritionRecord?.foodId ?? null,
+        name: item.name,
+        portion: item.portion,
+        nutrients: item.calculatedNutrients,
+        provenance: item.quantity?.provenance ?? null,
+      })),
+    });
+    if (!saveRequest.current || saveRequest.current.signature !== signature) {
+      saveRequest.current = { id: newDiaryRequestId(), signature };
+    }
+    const requestId = saveRequest.current.id;
+    saveInFlight.current = true;
+    setIsSavingMeal(true);
+    try {
+      const savedMealId = await foodDiaryService.saveMeal(requestId, localDate, mealType, selectedItems);
+      if (!savedMealId) throw new Error('The database did not confirm the saved meal.');
+      saveRequest.current = null;
+      setSavedMealsRefresh((current) => current + 1);
+      setMealItems([]);
+      resetScanWorkspace();
+      setShowSuccessModal(true);
+    } catch (error) {
+      Alert.alert('Meal not saved', error instanceof Error ? error.message : 'Could not save this meal. Check your connection and try again.');
+    } finally {
+      saveInFlight.current = false;
+      setIsSavingMeal(false);
+    }
+  };
 
   // ── GDM Warning Modal state ─────────────────────────────
-  const [showGdmWarning, setShowGdmWarning] = useState(false);
-  const [gdmWarnings, setGdmWarnings] = useState<FoodWarning[]>([]);
-  const [gdmRiskCategory, setGdmRiskCategory] = useState<GDMRiskResponse['riskCategory'] | null>(null);
-  const [pendingMealItems, setPendingMealItems] = useState<MealItem[]>([]);
-  const [pendingPreviousMealItems, setPendingPreviousMealItems] = useState<MealItem[]>([]);
-  const [pendingFoodNames, setPendingFoodNames] = useState<string[]>([]);
+
 
   // ── Manual Search State ─────────────────────────────────────
   const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
@@ -159,7 +229,22 @@ export default function DetectScreen() {
     const record = mapFoodNutritionRecord(food);
     const id = correctionCandidateId ?? `${food.food_id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     referenceVersions.current.set(id, (referenceVersions.current.get(id) ?? 0) + 1);
-    const next: MealItem = { ...createEstimatedPreviewItem(id, record, record.foodId, null), timestamp: Date.now(), referenceStatus: 'loaded', rawDetections: [] };
+    const existing = mealItems.find((item) => item.id === id);
+    let next: MealItem = { ...createEstimatedPreviewItem(id, record, record.foodId, null), timestamp: Date.now(), referenceStatus: 'loaded', rawDetections: [] };
+    if (existing?.portion && record.referenceBasis?.unit === existing.portion.unit) {
+      const recalculated = adjustEstimatedQuantity(next, existing.portion.amount, record.referenceBasis.unit);
+      if (recalculated.ok) next = {
+        ...recalculated.item,
+        timestamp: existing.timestamp,
+        imageUri: existing.imageUri,
+        quantity: {
+          ...recalculated.item.quantity!,
+          provenance: existing.quantity?.provenance ?? 'user_adjusted',
+          initialSuggestion: existing.quantity?.initialSuggestion ?? recalculated.item.quantity?.initialSuggestion ?? null,
+          reason: 'Your selected amount was kept; estimates now use the selected food reference.',
+        },
+      };
+    }
     setMealItems((previous) => correctionCandidateId !== null
       ? previous.map((item) => item.id === id ? { ...next, timestamp: item.timestamp, imageUri: item.imageUri } : item)
       : [...previous, next]);
@@ -167,66 +252,7 @@ export default function DetectScreen() {
     setIsSearchModalVisible(false);
     setSearchQuery('');
     setSearchResults([]);
-    if (next.calculatedNutrients) void checkWarningsAndCommit([next]);
-  };
 
-  // Separated Warning Logic so both Scanner and Manual Search can use it
-  const checkWarningsAndCommit = async (fetchedItems: MealItem[]) => {
-    if (fetchedItems.length === 0) return;
-
-    try {
-      const [riskCat, todayTotals] = await Promise.all([
-        gdmCacheService.getRiskCategory(userId),
-        mealService.getTodayTotals(userId),
-      ]);
-
-      const sumKnown = (key: 'sugarG' | 'carbsG' | 'fatG') => {
-        const values = fetchedItems.map((item) => item.calculatedNutrients?.[key] ?? null);
-        return values.some((value) => value === null) ? null : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-      };
-      const newSugar = sumKnown('sugarG');
-      const newCarbs = sumKnown('carbsG');
-      const newFat = sumKnown('fatG');
-
-      const warnings: FoodWarning[] = [];
-      const sugarLimit = riskCat === 'High Risk' ? 20 : PREGNANCY_NUTRITION_TARGETS.sugarG;
-
-      if (riskCat === 'High Risk') {
-        if (newSugar !== null && newSugar > 8) warnings.push({ severity: 'high', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (estimated amount). High Risk GDM should keep per-meal sugar very low.` });
-        if (newCarbs !== null && newCarbs > 50) warnings.push({ severity: 'high', message: `🍞 Carbs: Adds ${newCarbs.toFixed(1)}g (estimated amount). This is high for a single meal.` });
-      } else if (riskCat === 'Moderate Risk') {
-        if (newSugar !== null && newSugar > 12) warnings.push({ severity: 'medium', message: `🍬 Sugar: Adds ${newSugar.toFixed(1)}g (estimated amount). Consider smaller portions.` });
-      } else if (!riskCat) {
-        if (newSugar !== null && newSugar > 10) warnings.push({ severity: 'medium', message: `🍬 Sugar: This adds ${newSugar.toFixed(1)}g. Review this estimate against advice from your care team.` });
-        if (newCarbs !== null && newCarbs > 60) warnings.push({ severity: 'medium', message: `🍞 Carbs: This adds ${newCarbs.toFixed(1)}g. This is an estimated amount.` });
-      }
-
-      if (newSugar !== null && todayTotals.sugar + newSugar > sugarLimit) {
-        if (!warnings.some(w => w.message.includes('Sugar Limit'))) warnings.push({ severity: riskCat === 'High Risk' ? 'high' : 'medium', message: `⚠️ Sugar Limit: Recorded estimates plus this amount exceed the ${sugarLimit}g guidance used by this diary. Records may be incomplete; review with your care team.` });
-      }
-
-      if (newCarbs !== null && todayTotals.carbs + newCarbs > 200) {
-        if (!warnings.some(w => w.message.includes('Carbs'))) warnings.push({ severity: 'medium', message: `🍞 Carbs: Recorded estimates plus this amount exceed the diary guidance. Records may be incomplete. Consider a lighter option.` });
-      }
-
-      if (newFat !== null && newFat > 20) {
-        warnings.push({ severity: 'info', message: `🥑 Fat: This food adds ${newFat.toFixed(1)}g of fat. Choose lean options where possible.` });
-      }
-
-      if (warnings.length > 0) {
-        setPendingMealItems(fetchedItems);
-        setPendingFoodNames(fetchedItems.map((i) => i.name.replace(/_/g, ' ')));
-        setGdmWarnings(warnings);
-        setGdmRiskCategory(riskCat);
-        setShowGdmWarning(true);
-        return;
-      }
-    } catch {
-      // Proceed silently on error
-    }
-
-    setPendingMealItems([]);
-    setPendingPreviousMealItems([]);
   };
 
   // Check native camera/gallery permissions with visible failure handling.
@@ -246,8 +272,14 @@ export default function DetectScreen() {
     scanRequestId.current += 1;
     setScanState('idle');
     setImageUri(null);
+    setImageAspectRatio(4 / 3);
     setCorrectionCandidateId(null);
     setErrorMsg(null);
+    setIsLookingUp(false);
+    setIsSearchModalVisible(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    referenceVersions.current.clear();
   };
 
   const handleBack = () => {
@@ -278,8 +310,16 @@ export default function DetectScreen() {
       const food = await mealService.getNutritionForFood(item.foodId);
       if (!mounted.current || referenceVersions.current.get(item.id) !== version) return;
       const estimated = createEstimatedPreviewItem(item.id, food, item.foodId, item.confidence, item.rawDetections, allDetections);
-      setMealItems((previous) => previous.map((current) => current.id === item.id && current.foodId === item.foodId
-        ? { ...current, ...estimated, referenceStatus: food ? 'loaded' : 'unmapped' } : current));
+      setMealItems((previous) => previous.map((current) => {
+        if (current.id !== item.id || current.foodId !== item.foodId) return current;
+        let resolved = estimated;
+        if (current.portion && (current.portion.amount === 0 || current.quantity?.provenance === 'user_adjusted') &&
+          (!food?.referenceBasis || food.referenceBasis.unit === current.portion.unit)) {
+          const retained = adjustEstimatedQuantity(estimated, current.portion.amount, current.portion.unit as PortionUnit);
+          if (retained.ok) resolved = retained.item;
+        }
+        return { ...current, ...resolved, referenceStatus: food ? 'loaded' : 'unmapped' };
+      }));
       return { ...item, ...estimated, referenceStatus: food ? 'loaded' as const : 'unmapped' as const };
     } catch (error) {
       if (!mounted.current || referenceVersions.current.get(item.id) !== version) return;
@@ -322,7 +362,7 @@ export default function DetectScreen() {
         if (requestId === scanRequestId.current) {
           setIsLookingUp(false);
           const estimatedItems = resolved.flatMap((item) => item?.calculatedNutrients ? [item] : []);
-          if (estimatedItems.length > 0) void checkWarningsAndCommit(estimatedItems);
+
         }
       } else if (result.success && result.count === 0) {
         setScanState('no_detection');
@@ -395,19 +435,7 @@ export default function DetectScreen() {
       return;
     }
     const updated = { ...result.item, timestamp: current.timestamp };
-    setPendingPreviousMealItems([current]);
     setMealItems((prev) => prev.map((item) => item.id === id ? updated : item));
-    void checkWarningsAndCommit([updated]);
-  };
-
-  // Commit pending items to the plate (called after warning modal dismissal)
-  const commitPendingItems = (items: MealItem[]) => {
-    // Estimates already appear inline. Dismissal must not overwrite a newer edit.
-    void items;
-    setPendingMealItems([]);
-    setPendingPreviousMealItems([]);
-    setPendingFoodNames([]);
-    setGdmWarnings([]);
   };
 
   const handleRemoveMealItem = (idToRemove: string) => {
@@ -691,10 +719,19 @@ export default function DetectScreen() {
             onEditFood={handleOpenFoodCorrection}
             onRetryReference={(id) => {
               const item = mealItems.find((food) => food.id === id);
-              if (item) void loadNutritionForItem(item).then((updated) => { if (updated?.calculatedNutrients) void checkWarningsAndCommit([updated]); });
+              if (item) void loadNutritionForItem(item).then((updated) => {  });
             }}
           />
         </View>
+
+        <FoodDiaryHistory
+          date={`${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`}
+          openAllOnMount={viewDiary === '1'}
+          refreshKey={savedMealsRefresh}
+          signedIn={!!diarySession?.user?.id}
+          setupReady={isDiaryReady}
+          onSignIn={() => setShowDiaryAuth(true)}
+        />
 
         {/* ── Divider before scan ───────────────────────── */}
         <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
@@ -712,66 +749,25 @@ export default function DetectScreen() {
       </ScrollView>
 
       {mealItems.length > 0 && <View testID="meal-save-footer" style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 10), backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
-        <Text style={{ color: '#64748B', fontSize: 12, lineHeight: 17, textAlign: 'center', marginBottom: 8 }}>Preview only. Saving needs a meal database update.</Text>
-        <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: true }} accessibilityLabel="Save Meal. Disabled until meal database support is updated." disabled style={{ minHeight: 48, paddingHorizontal: 16, borderRadius: 14, backgroundColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: '#475569', fontSize: 15, fontWeight: '700' }}>Save Meal</Text>
+        <Text style={{ color: '#64748B', fontSize: 12, lineHeight: 17, textAlign: 'center', marginBottom: 8 }}>{diarySession?.user?.email ? (isDiaryReady ? `Food Diary · ${diarySession.user.email}` : 'Diary database setup must be applied and verified before saving.') : 'Sign in to your separate Food Diary account to save securely.'}</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: isSavingMeal || !hasSelectedPortion || (!!diarySession?.user?.id && (!isDiaryReady || isCheckingDiarySetup)) }} accessibilityLabel={isSavingMeal ? 'Saving meal' : 'Save Meal'} disabled={isSavingMeal || !hasSelectedPortion || (!!diarySession?.user?.id && (!isDiaryReady || isCheckingDiarySetup))} onPress={() => void handleSaveMeal()} style={{ minHeight: 48, paddingHorizontal: 16, borderRadius: 14, backgroundColor: isSavingMeal || !hasSelectedPortion || (!!diarySession?.user?.id && (!isDiaryReady || isCheckingDiarySetup)) ? '#CBD5E1' : '#047857', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+          {(isSavingMeal || isCheckingDiarySetup) && <ActivityIndicator color="#FFFFFF" />}
+          <Text style={{ color: isSavingMeal || !hasSelectedPortion || (!!diarySession?.user?.id && (!isDiaryReady || isCheckingDiarySetup)) ? '#475569' : '#FFFFFF', fontSize: 15, fontWeight: '700' }}>{isSavingMeal ? 'Saving…' : isCheckingDiarySetup ? 'Checking setup…' : 'Save Meal'}</Text>
         </TouchableOpacity>
       </View>}
+
+      <FoodDiaryAuthModal visible={showDiaryAuth} onClose={() => setShowDiaryAuth(false)} />
 
       <MealSaveSuccessModal
         visible={showSuccessModal}
         mealType={mealType}
-        onViewWellness={() => {
-          setShowSuccessModal(false);
-          setMealItems([]);
-          resetScanWorkspace();
-          router.push('/(mother)/gdm-care');
-        }}
+        onViewWellness={() => { setShowSuccessModal(false); router.push('/gdm-care'); }}
         onScanMore={() => {
           setShowSuccessModal(false);
-          setMealItems([]);
           resetScanWorkspace();
         }}
       />
 
-      {/* ── GDM Food Warning Modal ─────────────────────────────── */}
-      <GDMFoodWarningModal
-        visible={showGdmWarning}
-        riskCategory={gdmRiskCategory}
-        foodNames={pendingFoodNames}
-        warnings={gdmWarnings}
-        onAddAnyway={() => {
-          setShowGdmWarning(false);
-          commitPendingItems(pendingMealItems);
-        }}
-        onSkip={() => {
-          setShowGdmWarning(false);
-          setMealItems((previous) => previous.flatMap((item) => {
-            const oldItem = pendingPreviousMealItems.find((old) => old.id === item.id);
-            if (!pendingMealItems.some((pending) => pending.id === item.id)) return [item];
-            return oldItem?.portion ? [oldItem] : [];
-          }));
-          setPendingMealItems([]);
-          setPendingPreviousMealItems([]);
-          setPendingFoodNames([]);
-          setGdmWarnings([]);
-        }}
-        onCheckRisk={() => {
-          setShowGdmWarning(false);
-          setMealItems((previous) => previous.flatMap((item) => {
-            const oldItem = pendingPreviousMealItems.find((old) => old.id === item.id);
-            if (!pendingMealItems.some((pending) => pending.id === item.id)) return [item];
-            return oldItem?.portion ? [oldItem] : [];
-          }));
-          setPendingMealItems([]);
-          setPendingPreviousMealItems([]);
-          setPendingFoodNames([]);
-          setGdmWarnings([]);
-          router.push('/(mother)/gdm-care?tab=gdm');
-        }}
-      />
-
-      {/* ── GDM Lock Modal (Blocks interaction if GDM is unchecked) ── */}
       <Modal
         visible={isFocused && !dismissGdmLock && hasGdmRisk === false}
         transparent

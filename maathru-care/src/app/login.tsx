@@ -11,9 +11,11 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { Heart, Mail, Lock, Eye, EyeOff, Stethoscope, Baby } from 'lucide-react-native';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 type LoginRole = 'mother' | 'doctor';
 
@@ -26,6 +28,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [formError, setFormError] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   const handleRoleSwitch = (role: LoginRole) => {
@@ -33,6 +37,7 @@ export default function LoginScreen() {
     setEmail('');
     setPassword('');
     setErrors({});
+    setFormError('');
     setShowPassword(false);
   };
 
@@ -49,6 +54,7 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!validate()) return;
     setIsLoading(true);
+    setFormError('');
     try {
       const response = await api.login(email.trim().toLowerCase(), password);
       if (response.success) {
@@ -60,16 +66,26 @@ export default function LoginScreen() {
           router.replace('/(mother)/home');
         }
       } else {
-        Alert.alert('Login Failed', 'Invalid email or password. Please try again.');
+        setFormError('Sign in was not completed. Check your email and password and try again.');
       }
     } catch (err: any) {
-      Alert.alert(
-        'Connection Error',
-        err.message || 'Unable to connect to server. Please check your Wi-Fi and try again.'
-      );
+      setFormError(err?.message || 'Unable to connect to Supabase. Check your internet connection and try again.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePasswordReset = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail.includes('@')) { setErrors({ email: 'Enter your email address first' }); return; }
+    setIsSendingReset(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: Linking.createURL('auth/callback') });
+      if (error) throw error;
+      Alert.alert('Check your email', 'If an account exists for this address, Supabase will send password recovery instructions.');
+    } catch (error: any) {
+      Alert.alert('Password reset failed', error.message || 'Please try again later.');
+    } finally { setIsSendingReset(false); }
   };
 
   return (
@@ -205,6 +221,11 @@ export default function LoginScreen() {
             {errors.password && (
               <Text className="text-red-500 text-xs mb-3 ml-1">{errors.password}</Text>
             )}
+            {!!formError && <Text accessibilityRole="alert" className="text-red-600 text-sm mt-3">{formError}</Text>}
+
+            <TouchableOpacity onPress={() => void handlePasswordReset()} disabled={isSendingReset || isLoading} style={{ alignSelf: 'flex-end', paddingVertical: 7 }}>
+              <Text className="text-emerald-700 text-xs font-semibold">{isSendingReset ? 'Sending recovery email…' : 'Forgot password?'}</Text>
+            </TouchableOpacity>
 
             {/* Login Button */}
             <TouchableOpacity

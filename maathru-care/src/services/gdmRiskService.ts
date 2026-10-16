@@ -6,11 +6,17 @@ const GDM_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout >
 
 const GDM_API_URL = process.env.EXPO_PUBLIC_GDM_API_URL || 'https://food-detector-api.onrender.com/predict-diabetes';
 
+export const GDM_REQUIRED_FIELDS: (keyof GDMRiskRequest)[] = [
+  'age', 'no_of_pregnancy', 'gestation_in_previous_pregnancy', 'bmi',
+  'hdl', 'family_history', 'unexplained_prenatal_loss', 'large_child_or_birth_default', 'pcos',
+  'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin', 'sedentary_lifestyle', 'prediabetes',
+];
+
 export const gdmRiskService = {
   async getMaternalProfile(userId: string) {
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select('id,created_at,age,gestational_week,no_of_pregnancy,gestation_in_previous_pregnancy,bmi,hdl,family_history,unexplained_prenatal_loss,large_child_or_birth_default,pcos,sys_bp,dia_bp,ogtt,hemoglobin,sedentary_lifestyle,prediabetes')
       .eq('id', userId)
       .single();
 
@@ -22,20 +28,24 @@ export const gdmRiskService = {
   },
 
   async assessRisk(profileData: Partial<GDMRiskRequest>): Promise<GDMRiskResponse> {
-    // Audit: The legacy /predict-diabetes backend requires 15 specific clinical features
-    const requiredFields: (keyof GDMRiskRequest)[] = [
-      'age', 'no_of_pregnancy', 'gestation_in_previous_pregnancy', 'bmi',
-      'hdl', 'family_history', 'unexplained_prenatal_loss', 'large_child_or_birth_default',
-      'pcos', 'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin', 'sedentary_lifestyle', 'prediabetes'
-    ];
-
-    const missing = requiredFields.filter(
-      field => profileData[field] === undefined || profileData[field] === null
+    // The current inference endpoint accepts these 15 features. Gestational week
+    // is used by the app for care timing, but is not an inference input.
+    const missing = GDM_REQUIRED_FIELDS.filter((field) =>
+      typeof profileData[field] !== 'number' || !Number.isFinite(profileData[field])
     );
 
     if (missing.length > 0) {
       throw new Error(`Incomplete clinical profile. Missing: ${missing.join(', ')}`);
     }
+    const binaryFields: (keyof GDMRiskRequest)[] = [
+      'family_history', 'unexplained_prenatal_loss', 'large_child_or_birth_default',
+      'pcos', 'sedentary_lifestyle', 'prediabetes',
+    ];
+    const invalidFlags = binaryFields.filter((field) => profileData[field] !== 0 && profileData[field] !== 1);
+    if (invalidFlags.length > 0) {
+      throw new Error(`Invalid clinical profile values: ${invalidFlags.join(', ')}`);
+    }
+    const inferencePayload = Object.fromEntries(GDM_REQUIRED_FIELDS.map((field) => [field, profileData[field]]));
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), GDM_TIMEOUT_MS);
@@ -46,7 +56,7 @@ export const gdmRiskService = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(profileData),
+        body: JSON.stringify(inferencePayload),
         signal: controller.signal,
       });
 

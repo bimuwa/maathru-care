@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Dimensions, LayoutAnimation, Platform, UIManager,
-  FlatList, ViewToken, TextInput
+  StyleSheet, LayoutAnimation, Platform, UIManager, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -11,13 +10,11 @@ import {
   ShieldAlert, RefreshCw, Zap, Activity, Info, Check, TrendingUp,
   Camera, ChevronLeft, ChevronRight, CalendarX, HelpCircle
 } from 'lucide-react-native';
-import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-import { mealService } from '@/services/mealService';
-import { gdmRiskService } from '@/services/gdmRiskService';
+import { WellnessDiaryDashboard } from '@/components/ui/WellnessDiaryDashboard';
+import { GDM_REQUIRED_FIELDS, gdmRiskService } from '@/services/gdmRiskService';
 import { gdmV4ResearchService } from '@/services/gdmV4ResearchService';
 import { gdmCacheService, GDMCacheEntry } from '@/services/gdmCacheService';
-import { PREGNANCY_NUTRITION_TARGETS } from '@/constants/pregnancyNutritionTargets';
 import { useAuth } from '@/context/AuthContext';
 import { GDMRiskResponse } from '@/types/gdm';
 import { GDMV4RiskResponse, GDMV4FormState, MedicalHistoryChoice } from '@/types/gdmV4';
@@ -26,12 +23,9 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const { width } = Dimensions.get('window');
-
 type Tab = 'daily' | 'weekly' | 'gdm';
 
 // ─── Constants & Colors ───────────────────────────────────────────────────────
-const GDM_HIGH_SUGAR_LIMIT = 20;
 
 const COLORS = {
   primary: '#059669',
@@ -52,31 +46,6 @@ const COLORS = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatDate(iso: string) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  // Re-adjust if it's parsed as UTC to local date if necessary, but assuming YYYY-MM-DD input, this might be off by timezone.
-  // Better approach for YYYY-MM-DD string:
-  const [y, m, day] = iso.split('-');
-  if (!y || !m || !day) return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const localDate = new Date(Number(y), Number(m)-1, Number(day));
-  return localDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function getLocalDateString(d: Date) {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-const formatLocalTime = (isoString: string) => {
-  if (!isoString) return '';
-  return new Date(isoString).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-};
-
 function getGestationalText(week: number | undefined) {
   if (!week) return null;
   const trimester = week <= 13 ? 1 : week <= 27 ? 2 : 3;
@@ -84,56 +53,6 @@ function getGestationalText(week: number | undefined) {
 }
 
 // ─── SVG Components ───────────────────────────────────────────────────────────
-const SemiCircleGauge = ({ current, target, color = COLORS.primary }: { current: number, target: number, color?: string }) => {
-  const size = 200;
-  const strokeWidth = 14;
-  const radius = (size - strokeWidth) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circumference = radius * Math.PI;
-
-  const pct = Math.min(current / target, 1);
-  const strokeDashoffset = circumference - pct * circumference;
-
-  return (
-    <View style={{ width: size, height: size / 2 + 10, alignItems: 'center' }}>
-      <Svg width={size} height={size / 2} viewBox={`0 0 ${size} ${size / 2}`}>
-        <Defs>
-          <LinearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor={color} stopOpacity="0.8" />
-            <Stop offset="100%" stopColor={color} stopOpacity="1" />
-          </LinearGradient>
-        </Defs>
-        <Path
-          d={`M ${strokeWidth / 2} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
-          fill="none"
-          stroke="#F1F5F9"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-        />
-        <Path
-          d={`M ${strokeWidth / 2} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
-          fill="none"
-          stroke="url(#gaugeGrad)"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-        />
-      </Svg>
-      <View style={{ position: 'absolute', bottom: 5, alignItems: 'center' }}>
-        <Text style={{ fontSize: 32, fontWeight: '700', color: COLORS.textHeader, lineHeight: 36 }}>
-          {current.toLocaleString()}
-        </Text>
-        <Text style={{ fontSize: 13, color: COLORS.textMuted, fontWeight: '500' }}>
-          / {target.toLocaleString()} kcal
-        </Text>
-      </View>
-    </View>
-  );
-};
-
-// ─── Sub-Components ───────────────────────────────────────────────────────────
 const SegmentedControl = ({ active, onChange }: { active: Tab, onChange: (t: Tab) => void }) => {
   const tabs: { key: Tab, label: string }[] = [
     { key: 'daily', label: 'Daily' },
@@ -163,75 +82,9 @@ const SegmentedControl = ({ active, onChange }: { active: Tab, onChange: (t: Tab
   );
 };
 
-const NutrientRing = ({ label, current, target, unit, color, isUpperLimit }: any) => {
-  const rawPct = current / target;
-  const pct = Math.min(rawPct, 1);
-  const size = 56;
-  const stroke = 6;
-  const radius = (size - stroke) / 2;
-  const circ = 2 * Math.PI * radius;
-  const offset = circ - pct * circ;
-
-  const isExceeded = isUpperLimit && current > target;
-  const displayColor = isExceeded ? COLORS.accent : color;
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-      <View style={{ width: size, height: size, marginRight: 12 }}>
-        <Svg width={size} height={size}>
-          <Circle cx={size / 2} cy={size / 2} r={radius} stroke="#F1F5F9" strokeWidth={stroke} fill="none" />
-          <Circle
-            cx={size / 2} cy={size / 2} r={radius}
-            stroke={displayColor} strokeWidth={stroke} fill="none"
-            strokeDasharray={circ} strokeDashoffset={offset}
-            strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          />
-        </Svg>
-        <View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: isExceeded ? COLORS.accent : COLORS.textHeader }}>{Math.round(rawPct * 100)}%</Text>
-        </View>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: isExceeded ? COLORS.accent : COLORS.textMain }}>{label}</Text>
-        <Text style={{ fontSize: 13, color: isExceeded ? COLORS.accent : COLORS.textMuted }}>{current.toFixed(1)} / {target} {unit}</Text>
-      </View>
-    </View>
-  );
-};
-
-const SmartInsightCard = ({ icon: Icon, title, description, isPositive }: any) => (
-  <View style={s.insightCard}>
-    <View style={[s.insightIconBg, { backgroundColor: isPositive ? COLORS.primaryBg : COLORS.amberBg }]}>
-      <Icon size={18} color={isPositive ? COLORS.primary : COLORS.amber} />
-    </View>
-    <View style={{ flex: 1 }}>
-      <Text style={s.insightTitle}>{title}</Text>
-      <Text style={s.insightDesc}>{description}</Text>
-    </View>
-  </View>
-);
-
-const SimpleBarChart = ({ data, color }: { data: number[], color: string }) => {
-  const max = Math.max(...data, 1);
-  return (
-    <View style={s.chartContainer}>
-      {data.map((val, idx) => (
-        <View key={idx} style={s.chartCol}>
-          <View style={s.chartTrack}>
-            {val > 0 && (
-              <View style={[s.chartBar, { height: `${(val / max) * 100}%`, backgroundColor: color }]} />
-            )}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-};
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function WellnessScreen() {
   const router = useRouter();
-  const { tab } = useLocalSearchParams<{ tab?: string }>();
+  const { tab, date } = useLocalSearchParams<{ tab?: string; date?: string }>();
   const { user } = useAuth();
   const userId = user?.id || '';
 
@@ -245,49 +98,13 @@ export default function WellnessScreen() {
 
   // Load Profile globally for Header
   useEffect(() => {
+    if (!userId) return;
     const loadProfile = async () => {
       const profile = await gdmRiskService.getMaternalProfile(userId);
       setMaternalProfile(profile);
     };
     loadProfile();
-  }, []);
-
-  // Daily Data & Caching
-  const [dateRange, setDateRange] = useState<string[]>([]);
-  const [selectedDateIso, setSelectedDateIso] = useState<string>(getLocalDateString(new Date()));
-  const [dailyDataMap, setDailyDataMap] = useState<Record<string, any[]>>({});
-  const [isLoadingDailyMap, setIsLoadingDailyMap] = useState<Record<string, boolean>>({});
-  const flatListRef = React.useRef<FlatList>(null);
-  
-  useEffect(() => {
-    if (maternalProfile) {
-      const start = maternalProfile.created_at ? new Date(maternalProfile.created_at) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const end = new Date();
-      
-      const dates: string[] = [];
-      let curr = new Date(start);
-      curr.setHours(0,0,0,0);
-      end.setHours(0,0,0,0);
-      
-      while (curr <= end) {
-        dates.push(getLocalDateString(curr));
-        curr.setDate(curr.getDate() + 1);
-      }
-      if (dates.length === 0) dates.push(getLocalDateString(end));
-      setDateRange(dates);
-      
-      // Auto-scroll to end on first load
-      setTimeout(() => {
-        if (flatListRef.current && dates.length > 0) {
-          flatListRef.current.scrollToIndex({ index: dates.length - 1, animated: false });
-        }
-      }, 100);
-    }
-  }, [maternalProfile]);
-
-  // Weekly
-  const [isLoadingWeekly, setIsLoadingWeekly] = useState(false);
-  const [weeklyData, setWeeklyData] = useState<any[]>([]);
+  }, [userId]);
 
   // GDM
   const [gdmCache, setGdmCache] = useState<GDMCacheEntry | null>(null);
@@ -391,38 +208,16 @@ export default function WellnessScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'daily' && selectedDateIso) loadDailyForDate(selectedDateIso, true);
-      else if (activeTab === 'weekly') loadWeekly();
-      else if (activeTab === 'gdm') loadGdmCache();
-    }, [activeTab, selectedDateIso])
+      if (activeTab === 'gdm') void loadGdmCache();
+    }, [activeTab, userId])
   );
-
-  const loadDailyForDate = async (dateIso: string, force = false) => {
-    if (!force && dailyDataMap[dateIso]) return; // Already cached
-    
-    setIsLoadingDailyMap(prev => ({ ...prev, [dateIso]: true }));
-    try {
-      const data = await mealService.getDailyNutrition(userId, new Date(dateIso));
-      setDailyDataMap(prev => ({ ...prev, [dateIso]: data }));
-    } catch { }
-    setIsLoadingDailyMap(prev => ({ ...prev, [dateIso]: false }));
-  };
-
-  const loadWeekly = async () => {
-    setIsLoadingWeekly(true);
-    try {
-      const data = await mealService.getWeeklyTrends(userId);
-      setWeeklyData(data);
-    } catch { }
-    setIsLoadingWeekly(false);
-  };
 
   const loadGdmCache = useCallback(async () => {
     const { entry, isExpired, daysUntilNextCheck } = await gdmCacheService.load(userId);
     setGdmCache(entry);
     setGdmExpired(isExpired);
     setDaysUntilNext(daysUntilNextCheck);
-  }, []);
+  }, [userId]);
 
   const handleCheckGdm = async () => {
     setIsCheckingGdm(true);
@@ -450,7 +245,7 @@ export default function WellnessScreen() {
       
       const [result] = await Promise.all([apiPromise, minDelayPromise]);
       
-      const gestationalWeek = profile.gestational_week || 24;
+      const gestationalWeek = profile.gestational_week ?? null;
       const entry = await gdmCacheService.save(userId, result, gestationalWeek);
       
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -473,281 +268,11 @@ export default function WellnessScreen() {
   // ═══════════════════════════════════════════════════════════════════
   //  DAILY TAB
   // ═══════════════════════════════════════════════════════════════════
-  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    if (viewableItems.length > 0) {
-      setSelectedDateIso(viewableItems[0].item);
-    }
-  }, []);
-  const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
-
-  const handleJumpToToday = () => {
-    if (dateRange.length > 0 && flatListRef.current) {
-      flatListRef.current.scrollToIndex({ index: dateRange.length - 1, animated: true });
-    }
-  };
-
-  const handlePrevDay = () => {
-    const idx = dateRange.indexOf(selectedDateIso);
-    if (idx > 0 && flatListRef.current) {
-      flatListRef.current.scrollToIndex({ index: idx - 1, animated: true });
-    }
-  };
-
-  const handleNextDay = () => {
-    const idx = dateRange.indexOf(selectedDateIso);
-    if (idx < dateRange.length - 1 && flatListRef.current) {
-      flatListRef.current.scrollToIndex({ index: idx + 1, animated: true });
-    }
-  };
-
-  const renderDailyItem = ({ item: dateIso }: { item: string }) => {
-    const dailyData = dailyDataMap[dateIso] || [];
-    const isLoadingDaily = isLoadingDailyMap[dateIso];
-    const isToday = dateIso === getLocalDateString(new Date());
-
-    if (isLoadingDaily) {
-      return (
-        <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
-          <View style={s.skeletonCard}>
-            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
-          </View>
-        </ScrollView>
-      );
-    }
-
-    if (dailyData.length === 0) {
-      return (
-        <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
-          <View style={[s.emptyCard, { marginTop: 20 }]}>
-            <View style={s.emptyIconContainer}>
-              <CalendarX size={48} color={COLORS.primary} />
-            </View>
-            <Text style={s.emptyTitle}>No Meal Logs for This Day</Text>
-            <Text style={s.emptySubtitle}>
-              You didn't log any meals on {formatDate(dateIso)}.{'\n'}
-              Start tracking to view your maternal nutrient breakdown.
-            </Text>
-            <TouchableOpacity 
-              style={s.btnPrimary}
-              onPress={() => router.push(`/detect?date=${dateIso}` as any)}
-            >
-              <Camera size={20} color="#FFF" style={{ marginRight: 8 }} />
-              <Text style={s.btnPrimaryText}>Log a Meal for This Day</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      );
-    }
-
-    const tVals = dailyData.reduce(
-      (acc, log) => ({
-        carbs: acc.carbs + (log.total_carbs_g || 0),
-        sugar: acc.sugar + (log.total_sugar_g || 0),
-        fiber: acc.fiber + (log.total_fiber_g || 0),
-        fat: acc.fat + (log.total_fat_g || 0),
-        iron: acc.iron + (log.total_iron_mg || 0),
-        calcium: acc.calcium + (log.total_calcium_mg || 0),
-      }),
-      { carbs: 0, sugar: 0, fiber: 0, fat: 0, iron: 0, calcium: 0 }
-    );
-    const estKcal = Math.round((tVals.carbs * 4) + (tVals.fat * 9) + 200);
-
-    const isHighRisk = gdmCache?.result.riskCategory === 'High Risk';
-    const sugarTarget = isHighRisk ? GDM_HIGH_SUGAR_LIMIT : PREGNANCY_NUTRITION_TARGETS.sugarG;
-    const sugarStatus = tVals.sugar > sugarTarget ? 'exceeded' : tVals.sugar > sugarTarget * 0.75 ? 'attention' : 'normal';
-
-    const getMovementRecommendation = () => {
-      if (sugarStatus === 'exceeded') return { show: true, title: 'Gentle Movement', text: 'A short, comfortable walk is a simple way to stay active and support balance.' };
-      if (sugarStatus === 'attention') return { show: true, title: 'Light Activity', text: 'A 10-minute stroll after your meal helps maintain steady energy levels.' };
-      if (tVals.carbs > PREGNANCY_NUTRITION_TARGETS.carbsG) return { show: true, title: 'Energy Balance', text: 'A gentle walk can be a great way to utilize your energy after a satisfying meal.' };
-      if (tVals.iron > 0 && tVals.iron < PREGNANCY_NUTRITION_TARGETS.ironMg * 0.3) return { show: true, title: 'Listen to Your Body', text: 'If you are feeling a bit tired, gentle stretching or resting is perfectly fine today.' };
-      return { show: false, title: '', text: '' };
-    };
-    const movement = getMovementRecommendation();
-
-    return (
-      <ScrollView style={{ width }} contentContainerStyle={[s.tabContent, { paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
-        <View style={[s.card, { alignItems: 'center' }]}>
-          <Text style={s.cardTitleCentered}>{isToday ? "Today's Nutrition" : `${formatDate(dateIso)} Nutrition`}</Text>
-          <SemiCircleGauge current={estKcal} target={1800} color={COLORS.primary} />
-        </View>
-
-        <View style={s.cardRow}>
-          <View style={[s.cardHalf, { backgroundColor: sugarStatus === 'exceeded' ? COLORS.accentBg : sugarStatus === 'attention' ? COLORS.amberBg : COLORS.primaryBg }]}>
-            <Text style={s.smallTitle}>Glycemic Balance</Text>
-            <Text style={[s.statusBig, { color: sugarStatus === 'exceeded' ? COLORS.accent : sugarStatus === 'attention' ? COLORS.amber : COLORS.primary }]}>
-              {sugarStatus === 'exceeded' ? 'Target Exceeded' : sugarStatus === 'attention' ? 'Needs Attention' : 'On Track'}
-            </Text>
-            <Text style={s.tinyDesc}>{tVals.sugar.toFixed(1)} / {sugarTarget}g sugar</Text>
-          </View>
-          {movement.show && (
-            <View style={[s.cardHalf, { backgroundColor: '#F8FAFC' }]}>
-              <Text style={s.smallTitle}>{movement.title}</Text>
-              <Text style={s.movementText}>{movement.text}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Nutrient Balance</Text>
-          <View style={{ flexDirection: 'row' }}>
-            <View style={{ flex: 1 }}>
-              <NutrientRing label="Iron" current={tVals.iron} target={PREGNANCY_NUTRITION_TARGETS.ironMg} unit="mg" color={COLORS.amber} />
-              <NutrientRing label="Calcium" current={tVals.calcium} target={PREGNANCY_NUTRITION_TARGETS.calciumMg} unit="mg" color={COLORS.secondary} />
-              <NutrientRing label="Fiber" current={tVals.fiber} target={PREGNANCY_NUTRITION_TARGETS.fiberG} unit="g" color={COLORS.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <NutrientRing label="Carbs" current={tVals.carbs} target={PREGNANCY_NUTRITION_TARGETS.carbsG} unit="g" color={COLORS.primaryLight} />
-              <NutrientRing label="Sugar" current={tVals.sugar} target={sugarTarget} unit="g" color={COLORS.amber} isUpperLimit={true} />
-            </View>
-          </View>
-        </View>
-
-        <Text style={s.sectionTitle}>Meals</Text>
-        <View style={s.timelineContainer}>
-          {dailyData.map((log, index) => (
-            <View key={log.id} style={s.timelineRow}>
-              <View style={s.timelineLineContainer}>
-                <View style={s.timelineDot} />
-                {index < dailyData.length - 1 && <View style={s.timelineLine} />}
-              </View>
-              <View style={s.timelineContent}>
-                <View style={s.timelineHeader}>
-                  <Text style={s.timelineType}>{log.meal_type}</Text>
-                  <Text style={s.timelineTime}>{formatLocalTime(log.created_at || log.logged_date)}</Text>
-                </View>
-                <View style={s.chipsRow}>
-                  {log.meal_items?.map((item: any) => (
-                    <View key={item.id} style={s.foodChip}>
-                      <Text style={s.foodChipText}>{item.item_name}</Text>
-                    </View>
-                  ))}
-                </View>
-                <Text style={s.timelineNutr}>
-                  {(log.total_carbs_g || 0).toFixed(0)}g Carbs • {(log.total_sugar_g || 0).toFixed(0)}g Sugar • {(log.total_fiber_g || 0).toFixed(0)}g Fiber
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    );
-  };
-
-  const renderDaily = () => {
-    const isToday = selectedDateIso === getLocalDateString(new Date());
-    const idx = dateRange.indexOf(selectedDateIso);
-    const hasPrev = idx > 0;
-    const hasNext = idx < dateRange.length - 1;
-
-    return (
-      <View style={{ flex: 1 }}>
-        <View style={s.dateStrip}>
-          <TouchableOpacity onPress={handlePrevDay} disabled={!hasPrev} style={[s.dateBtn, !hasPrev && { opacity: 0.3 }]}>
-            <ChevronLeft size={24} color={COLORS.textHeader} />
-          </TouchableOpacity>
-          <View style={s.dateCenter}>
-            <Text style={s.dateText}>{isToday ? 'Today, ' : ''}{formatDate(selectedDateIso)}</Text>
-            {!isToday && (
-              <TouchableOpacity onPress={handleJumpToToday} style={s.jumpBtn}>
-                <Text style={s.jumpBtnText}>Jump to Today</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <TouchableOpacity onPress={handleNextDay} disabled={!hasNext} style={[s.dateBtn, !hasNext && { opacity: 0.3 }]}>
-            <ChevronRight size={24} color={COLORS.textHeader} />
-          </TouchableOpacity>
-        </View>
-
-        <FlatList
-          ref={flatListRef}
-          data={dateRange}
-          keyExtractor={(item) => item}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          renderItem={renderDailyItem}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          initialScrollIndex={dateRange.length > 0 ? dateRange.length - 1 : 0}
-          getItemLayout={(data, index) => ({ length: width, offset: width * index, index })}
-        />
-      </View>
-    );
-  };
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  WEEKLY TAB
-  // ═══════════════════════════════════════════════════════════════════
-  const renderWeekly = () => {
-    if (isLoadingWeekly) return <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />;
-
-    if (weeklyData.length === 0) {
-      return (
-        <View style={s.emptyCard}>
-          <TrendingUp size={48} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
-          <Text style={s.emptyTitle}>Your Week at a Glance</Text>
-          <Text style={s.emptySubtitle}>Keep logging your meals to see your weekly nutrition trends.</Text>
-        </View>
-      );
-    }
-
-    const last7DaysData = Array(7).fill(0).map((_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const dateStr = d.toISOString().split('T')[0];
-      const logs = weeklyData.filter(w => w.logged_date === dateStr);
-      return {
-        date: dateStr,
-        dayName: d.toLocaleDateString('en-GB', { weekday: 'short' }),
-        carbs: logs.reduce((sum, l) => sum + (l.total_carbs_g || 0), 0),
-        sugar: logs.reduce((sum, l) => sum + (l.total_sugar_g || 0), 0),
-        fiber: logs.reduce((sum, l) => sum + (l.total_fiber_g || 0), 0),
-      };
-    });
-
-    const carbsArr = last7DaysData.map(d => d.carbs);
-    const sugarArr = last7DaysData.map(d => d.sugar);
-
-    return (
-      <View style={s.tabContent}>
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Carbohydrate Trend</Text>
-          <SimpleBarChart data={carbsArr} color={COLORS.secondary} />
-          <View style={s.chartLabels}>
-            {last7DaysData.map((d, i) => <Text key={i} style={s.chartLabel}>{d.dayName}</Text>)}
-          </View>
-        </View>
-
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Sugar Intake</Text>
-          <SimpleBarChart data={sugarArr} color={COLORS.amber} />
-          <View style={s.chartLabels}>
-            {last7DaysData.map((d, i) => <Text key={i} style={s.chartLabel}>{d.dayName}</Text>)}
-          </View>
-        </View>
-
-        <View style={s.card}>
-          <Text style={s.cardTitle}>This week's insight</Text>
-          <Text style={s.insightDesc}>
-            Your tracking is consistent. Based on this week, focus on maintaining balanced complex carbohydrates to support steady energy levels.
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  GDM TAB
-  // ═══════════════════════════════════════════════════════════════════
   const renderGdm = () => {
     const hasValidCache = gdmCache && !gdmExpired;
     const result: GDMRiskResponse | undefined = gdmCache?.result;
 
-    const fields = [
-      'age', 'gestational_week', 'no_of_pregnancy', 'bmi',
-      'sys_bp', 'dia_bp', 'ogtt', 'hemoglobin'
-    ];
+    const fields = GDM_REQUIRED_FIELDS;
     let filled = 0;
     if (maternalProfile) {
       filled = fields.filter(f => maternalProfile[f] !== undefined && maternalProfile[f] !== null).length;
@@ -1163,12 +688,11 @@ export default function WellnessScreen() {
       <SegmentedControl active={activeTab} onChange={setActiveTab} />
 
       {/* CONTENT */}
-      {activeTab === 'daily' ? (
-        renderDaily()
+      {activeTab !== 'gdm' ? (
+        <WellnessDiaryDashboard mode={activeTab} onModeChange={setActiveTab} initialDate={date} />
       ) : (
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-          {activeTab === 'weekly' && renderWeekly()}
-          {activeTab === 'gdm' && renderGdm()}
+          {renderGdm()}
         </ScrollView>
       )}
 
@@ -1187,18 +711,18 @@ export default function WellnessScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
-  header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  header: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitle: { fontSize: 26, fontWeight: '700', color: COLORS.textHeader, marginBottom: 8 },
   gestBadge: { backgroundColor: COLORS.secondaryBg, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   gestBadgeText: { fontSize: 13, fontWeight: '600', color: COLORS.secondary },
   
-  segmentContainer: { flexDirection: 'row', backgroundColor: '#E2E8F0', marginHorizontal: 20, borderRadius: 24, padding: 4, marginBottom: 16 },
+  segmentContainer: { flexDirection: 'row', backgroundColor: '#E2E8F0', width: '92%', maxWidth: 608, alignSelf: 'center', borderRadius: 24, padding: 4, marginBottom: 8 },
   segmentBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 20 },
   segmentBtnActive: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   segmentText: { fontSize: 12, fontWeight: '600', color: COLORS.textMuted },
   segmentTextActive: { color: COLORS.textHeader },
 
-  tabContent: { paddingHorizontal: 20 },
+  tabContent: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 16 },
   
   card: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 10, elevation: 1 },
   cardTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textHeader, marginBottom: 20 },

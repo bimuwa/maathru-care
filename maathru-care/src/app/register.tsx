@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api, RegisterData } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 type Step = 'role_details' | 'doctor_select' | 'submitting';
 
@@ -142,6 +143,18 @@ export default function RegisterScreen() {
       setError('Please fill in all pregnancy details.');
       return false;
     }
+    if (activeRole === 'mother' && (!Number.isFinite(Number(age)) || Number(age) <= 0)) {
+      setError('Enter a valid age to create your maternal profile.');
+      return false;
+    }
+    if (activeRole === 'mother' && (!Number.isFinite(Number(gravida)) || Number(gravida) < 1)) {
+      setError('Enter a valid pregnancy count.');
+      return false;
+    }
+    if (activeRole === 'mother' && bmi.trim() && (!Number.isFinite(Number(bmi)) || Number(bmi) <= 0)) {
+      setError('BMI must be a positive number when provided.');
+      return false;
+    }
     if (activeRole === 'doctor' && (!medicalLicense.trim() || !specialty.trim() || !hospital.trim())) {
       setError('Please fill in all professional credentials.');
       return false;
@@ -162,7 +175,11 @@ export default function RegisterScreen() {
       if (activeRole === 'mother') {
         payload.age = age; payload.bloodGroup = bloodGroup;
         payload.lmpDate = lmpDate; payload.gravida = gravida;
-        payload.gestationalWeek = '0'; // calculated later usually, but passing 0 for now as it's required by db
+        const [lmpYear, lmpMonth, lmpDay] = lmpDate.split('-').map(Number);
+        const lmpUtc = Date.UTC(lmpYear, lmpMonth - 1, lmpDay);
+        const now = new Date();
+        const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        payload.gestationalWeek = String(Math.max(0, Math.floor((todayUtc - lmpUtc) / (7 * 24 * 60 * 60 * 1000))));
         payload.gestationInPreviousPregnancy = gestationInPrevious;
         payload.bmi = bmi;
         payload.hdl = hdl;
@@ -183,7 +200,11 @@ export default function RegisterScreen() {
       const response = await api.register(payload);
       if (response.success) {
         if (activeRole === 'doctor') {
-          // Doctors go straight in — no approval needed
+          if (response.user.approvalStatus !== 'approved') {
+            await supabase.auth.signOut();
+            setError('Your doctor account was created and is awaiting administrator approval. You can sign in after it is approved.');
+            return;
+          }
           await login({ ...response.user as any, approvalStatus: 'not_required' }, response.token);
           api.setAuthToken(response.token);
           router.replace('/(doctor)/home');
