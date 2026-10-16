@@ -46,6 +46,7 @@ import { detectLanguage, type LanguageBounds } from '../language/detect.js';
 import { routeLanguage, type LanguagePolicy } from '../language/policy.js';
 import { buildTextEvidence, TextArgmaxDivergenceError, type TextEvidence } from '../evidence/textEvidence.js';
 import type { FaceEvidence } from '../evidence/faceEvidence.js';
+import { argmaxState } from '../evidence/states.js';
 import { logger } from '../logging/logger.js';
 
 export interface MoodAnalyseResponseBody {
@@ -138,7 +139,7 @@ export async function analyseMood(
     return deps.sessionStore.get(input.sessionId);
   })();
   const turnFace = session
-    ? computeTurnFaceEvidence(session.accumulator.snapshot(), now)
+    ? computeTurnFaceEvidence(session.accumulator.snapshot(), now, session.faceBaseline ?? null)
     : { evidence: null as FaceEvidence | null, frameCount: 0, sessionElapsedMs: 0 };
 
   // ── Part A step 2 — language detection, BEFORE any sentiment call ──
@@ -216,10 +217,18 @@ export async function analyseMood(
 
   const textEvidenceDropped = textEvidence === null;
 
+  // Face-only turns (no text evidence this turn): the face state is the highest GROUPED share,
+  // with that share as its confidence (owner decision, 2026-10-17). The single top FER class
+  // (Rule A) under-reports distress, which is split across four FER classes, so a clearly
+  // distressed face could read as calm and fall below tau_face_min. With text present the
+  // Rule A evidence is passed unchanged.
+  const faceForFusion: FaceEvidence | null =
+    turnFace.evidence && textEvidence === null ? groupedFaceEvidence(turnFace.evidence) : turnFace.evidence;
+
   // ── Part A step 4 — invoke fusion. ALWAYS. Every path above funnels here. ──
   const fuseOutcome = await deps.fusionClient.fuse(
     {
-      faceEvidence: turnFace.evidence as unknown as Record<string, unknown> | null,
+      faceEvidence: faceForFusion as unknown as Record<string, unknown> | null,
       textEvidence: textEvidence as unknown as Record<string, unknown> | null,
     },
     input.correlationId,
@@ -256,7 +265,10 @@ export async function analyseMood(
       text: textEvidence?.model_version ?? null,
     },
     modality_breakdown: {
-      face: turnFace.evidence ? { state: turnFace.evidence.predicted_state, scores: { ...turnFace.evidence.scores } } : null,
+      // Display reading: the highest grouped share, so the label always matches the bars.
+      face: turnFace.evidence
+        ? { state: argmaxState(turnFace.evidence.scores), scores: { ...turnFace.evidence.scores } }
+        : null,
       text: textEvidence ? { state: textEvidence.predicted_state, scores: { ...textEvidence.scores } } : null,
     },
   };
@@ -269,4 +281,10 @@ export async function analyseMood(
   }
 
   return { kind: 'ok', body };
+}
+
+/** Face evidence whose state and confidence come from the grouped 3-state scores. */
+function groupedFaceEvidence(face: FaceEvidence): FaceEvidence {
+  const state = argmaxState(face.scores);
+  return { ...face, predicted_state: state, confidence: face.scores[state] };
 }

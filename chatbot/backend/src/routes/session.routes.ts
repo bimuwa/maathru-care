@@ -39,6 +39,7 @@ import { extractImageField } from '../capture/multipart.js';
 import { logger } from '../logging/logger.js';
 import { recordConsentEvent } from '../persistence/consentEvents.js';
 import { ensureUser } from '../persistence/users.js';
+import { getFaceBaseline, saveFaceBaseline } from '../persistence/faceBaselines.js';
 
 const SESSION_HEADER = 'x-session-id';
 
@@ -93,8 +94,22 @@ export function createSessionRouter(deps: SessionRouterDeps = {}): Router {
     // production. A test that constructs this router directly, bypassing
     // that middleware, gets the pre-C7 unscoped behaviour unmodified.
     if (req.userId) {
-      store.grantConsentForOwner(sessionId, req.userId);
+      const session = store.grantConsentForOwner(sessionId, req.userId);
       const userId = req.userId;
+      // Resting-face baseline: use the saved one; a user without one (first consent)
+      // has it captured from their first frames (capture/faceBaseline.ts).
+      void ensureUser(userId)
+        .then(() => getFaceBaseline(userId))
+        .then((saved) => {
+          if (session.baselinePhase !== 'loading') return;
+          session.faceBaseline = saved ?? null;
+          session.baselinePhase = saved ? 'ready' : 'collecting';
+        })
+        .catch((err: unknown) => {
+          // Unknown whether one exists: never overwrite it; read frames uncalibrated.
+          if (session.baselinePhase === 'loading') session.baselinePhase = 'off';
+          logger.error({ err: err instanceof Error ? err.message : 'unknown' }, 'failed to load face baseline');
+        });
       void ensureUser(userId)
         .then(() => recordConsentEvent(userId, sessionId, 'granted'))
         .catch((err: unknown) => {
@@ -261,6 +276,17 @@ async function handleFrame(
       // Session was revoked/paused between the consent check and here.
       res.status(200).json({ accepted: false, reason: recorded.reason });
       return;
+    }
+
+    if (recorded.baselineCaptured && req.userId) {
+      const userId = req.userId;
+      const baseline = recorded.baselineCaptured;
+      logger.info({ sessionId, frames: baseline.frameCount }, 'resting-face baseline captured');
+      void ensureUser(userId)
+        .then(() => saveFaceBaseline(userId, baseline))
+        .catch((err: unknown) => {
+          logger.error({ err: err instanceof Error ? err.message : 'unknown' }, 'failed to save face baseline');
+        });
     }
 
     if (recorded.reset) {

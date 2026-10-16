@@ -44,6 +44,7 @@
  * ⛔ This module never touches the 7→3 mapping, fusion, or a per-frame mood.
  */
 import { FrameAccumulator, type FerProbabilities } from './frameAccumulator.js';
+import { BaselineCollector, type FaceBaseline } from './faceBaseline.js';
 
 export interface CameraSession {
   readonly sessionId: string;
@@ -51,10 +52,18 @@ export interface CameraSession {
   /** false = paused (camera toggled inactive). Consent still stands. */
   cameraActive: boolean;
   readonly accumulator: FrameAccumulator;
+  /**
+   * Resting-face baseline (capture/faceBaseline.ts). 'loading' = the saved one is
+   * being fetched; 'collecting' = this user has none yet, so the first frames
+   * form it; 'ready' = in use; 'off' = unauthenticated legacy session.
+   */
+  baselinePhase: 'off' | 'loading' | 'collecting' | 'ready';
+  faceBaseline: FaceBaseline | null;
+  readonly baselineCollector: BaselineCollector;
 }
 
 export type RecordFrameResult =
-  | { ok: true; frameCount: number; reset: boolean }
+  | { ok: true; frameCount: number; reset: boolean; baselineCaptured?: FaceBaseline }
   | { ok: false; reason: 'no_consent' | 'camera_inactive' };
 
 /**
@@ -117,6 +126,9 @@ export class SessionStore {
       consentGrantedAt: now,
       cameraActive: true,
       accumulator: new FrameAccumulator(now),
+      baselinePhase: 'off',
+      faceBaseline: null,
+      baselineCollector: new BaselineCollector(),
     };
     this.sessions.set(sessionId, session);
     return session;
@@ -133,6 +145,10 @@ export class SessionStore {
       consentGrantedAt: now,
       cameraActive: true,
       accumulator: new FrameAccumulator(now),
+      // The route loads the saved baseline and moves this to ready / collecting.
+      baselinePhase: 'loading',
+      faceBaseline: null,
+      baselineCollector: new BaselineCollector(),
     };
     this.ownedSessions.set(SessionStore.ownerKey(sessionId, ownerId), session);
     let owners = this.ownersBySessionId.get(sessionId);
@@ -281,6 +297,14 @@ export class SessionStore {
     if (!session) return { ok: false, reason: 'no_consent' };
     if (!session.cameraActive) return { ok: false, reason: 'camera_inactive' };
     const { reset, count } = session.accumulator.addFrame(probabilities, modelVersion, now);
+    if (session.baselinePhase === 'collecting') {
+      const captured = session.baselineCollector.add(probabilities, modelVersion);
+      if (captured) {
+        session.faceBaseline = captured;
+        session.baselinePhase = 'ready';
+        return { ok: true, frameCount: count, reset, baselineCaptured: captured };
+      }
+    }
     return { ok: true, frameCount: count, reset };
   }
 
