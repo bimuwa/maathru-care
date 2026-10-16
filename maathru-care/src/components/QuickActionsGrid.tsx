@@ -16,14 +16,14 @@ export default function QuickActionsGrid() {
           icon={<Activity size={24} color="#059669" />} 
           title="Maternal Care" 
           description="Nutrition & GDM risk"
-          onPress={() => router.push('/(tabs)/wellness')}
+          onPress={() => router.push('/(mother)/gdm-care')}
         />
         {/* Meal Scan — routes to the AI food detection screen */}
         <ActionItem 
           icon={<ScanLine size={24} color="#15803D" />} 
           title="Meal Scan" 
           description="Scan & log your meals"
-          onPress={() => router.push('/(tabs)/detect')}
+          onPress={() => router.push('/(mother)/meal-scan')}
         />
         {/* Wellness — reserved for teammate's daily symptoms feature */}
         <ActionItem 

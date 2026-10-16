@@ -4,18 +4,27 @@ import { assertNewPortionPersistenceSupported, mapFoodNutritionRecord } from './
 
 const diarySelect = 'id, logged_date, meal_type, created_at, food_diary_items(id, item_name, carbs_g, sugar_g, fiber_g, fat_g, iron_mg, calcium_mg)';
 
-function toDiaryLog(meal: any) {
+type DiaryItemRow = Record<string, unknown> & { item_name: string };
+type DiaryMealRow = {
+  id: string;
+  logged_date: string;
+  meal_type: string;
+  created_at: string;
+  food_diary_items?: DiaryItemRow[] | null;
+};
+
+function toDiaryLog(meal: DiaryMealRow) {
   const items = meal.food_diary_items ?? [];
   const sum = (key: string) => {
-    const values = items.map((item: any) => item[key]);
-    const known = values.filter((value: unknown): value is number => typeof value === 'number' && Number.isFinite(value));
+    const values: unknown[] = items.map((item) => item[key]);
+    const known: number[] = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
     return known.length ? known.reduce((total, value) => total + value, 0) : null;
   };
   const nutrientColumns = [
     ['carbs_g', 'total_carbs_g'], ['sugar_g', 'total_sugar_g'], ['fiber_g', 'total_fiber_g'],
     ['fat_g', 'total_fat_g'], ['iron_mg', 'total_iron_mg'], ['calcium_mg', 'total_calcium_mg'],
   ];
-  const incomplete = nutrientColumns.filter(([itemKey]) => items.some((item: any) => item[itemKey] == null)).map(([, logKey]) => logKey);
+  const incomplete = nutrientColumns.filter(([itemKey]) => items.some((item) => item[itemKey] == null)).map(([, logKey]) => logKey);
   return {
     id: `diary:${meal.id}`,
     logged_date: meal.logged_date,
@@ -28,7 +37,7 @@ function toDiaryLog(meal: any) {
     total_iron_mg: sum('iron_mg'),
     total_calcium_mg: sum('calcium_mg'),
     incomplete_nutrients: incomplete,
-    meal_items: items.map((item: any) => ({ ...item, item_name: item.item_name })),
+    meal_items: items.map((item) => ({ ...item, item_name: item.item_name })),
   };
 }
 

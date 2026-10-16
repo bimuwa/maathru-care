@@ -60,7 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userData);
   };
   const updateUser = async (updates: Partial<AuthUser>) => setUser((prev) => prev ? { ...prev, ...updates } : prev);
-  const logout = async () => { await supabase.auth.signOut(); api.setAuthToken(null); setUser(null); };
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    api.setAuthToken(null);
+    setUser(null);
+  };
 
   return <AuthContext.Provider value={{ user, isLoading, login, logout, updateUser, isAuthenticated: !!user }}>{children}</AuthContext.Provider>;
 }

@@ -476,7 +476,7 @@ export default function DetectScreen() {
 
         {scanState === 'review' && <View style={{ gap: 8 }}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: '#047857' }}>Foods added to your preview</Text>
-          <Text style={{ fontSize: 13, color: '#64748B', lineHeight: 20 }}>{isLookingUp ? 'Loading food references?' : 'Review estimates above. Adjust amounts inline, Edit a food label, or remove anything incorrect.'}</Text>
+          <Text style={{ fontSize: 13, color: '#64748B', lineHeight: 20 }}>{isLookingUp ? 'Loading food references…' : 'Review estimates above. Adjust amounts inline, edit a food label, or remove anything incorrect.'}</Text>
           <TouchableOpacity accessibilityRole="button" disabled={isLookingUp} onPress={resetScanWorkspace} style={{ minHeight: 44, borderRadius: 12, backgroundColor: '#ECFDF5', padding: 12, justifyContent: 'center' }}><Text style={{ color: '#047857', fontWeight: '600' }}>Scan another photo / Search</Text></TouchableOpacity>
         </View>}
 

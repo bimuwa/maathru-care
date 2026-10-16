@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
-  Alert,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -35,23 +35,27 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 export default function MotherProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const confirmLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      router.replace('/login');
+    } catch (error) {
+      setShowLogoutConfirm(false);
+      setLogoutError(error instanceof Error ? error.message : 'Could not sign out. Please try again.');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            router.replace('/login');
-          },
-        },
-      ]
-    );
+    setLogoutError(null);
+    setShowLogoutConfirm(true);
   };
 
   const weeks = user?.gestationalAgeWeeks ?? 0;
@@ -145,12 +149,50 @@ export default function MotherProfileScreen() {
         {/* Sign Out */}
         <TouchableOpacity
           onPress={handleLogout}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
           className="bg-red-50 border border-red-100 rounded-[16px] p-4 flex-row items-center justify-center mb-10"
         >
           <LogOut color="#EF4444" size={18} />
           <Text className="text-red-500 font-semibold ml-2">Sign Out</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showLogoutConfirm || logoutError !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => {
+          if (logoutError) setLogoutError(null);
+          else if (!isLoggingOut) setShowLogoutConfirm(false);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.48)', justifyContent: 'center', padding: 24 }}>
+          <View accessibilityRole="alert" style={{ width: '100%', maxWidth: 380, alignSelf: 'center', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 22, gap: 12 }}>
+            <Text style={{ color: '#0F172A', fontSize: 19, fontWeight: '700' }}>
+              {logoutError ? 'Sign Out Failed' : 'Sign Out'}
+            </Text>
+            <Text style={{ color: '#475569', fontSize: 15, lineHeight: 22 }}>
+              {logoutError ?? 'Are you sure you want to sign out of Maathru Care?'}
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+              {logoutError ? (
+                <TouchableOpacity accessibilityRole="button" onPress={() => setLogoutError(null)} style={{ minHeight: 44, minWidth: 92, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#047857', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Close</Text>
+                </TouchableOpacity>
+              ) : <>
+                <TouchableOpacity accessibilityRole="button" disabled={isLoggingOut} onPress={() => setShowLogoutConfirm(false)} style={{ minHeight: 44, minWidth: 92, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center', opacity: isLoggingOut ? 0.5 : 1 }}>
+                  <Text style={{ color: '#334155', fontWeight: '700' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" disabled={isLoggingOut} onPress={() => { void confirmLogout(); }} style={{ minHeight: 44, minWidth: 110, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center', opacity: isLoggingOut ? 0.65 : 1 }}>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>{isLoggingOut ? 'Signing out…' : 'Sign Out'}</Text>
+                </TouchableOpacity>
+              </>}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

@@ -124,7 +124,7 @@ export default function RiskTrendScreen() {
               Complete your first AI risk assessment to see trends here.
             </Text>
             <TouchableOpacity
-              onPress={() => router.push('/(mother)/detect')}
+              onPress={() => router.push('/(mother)/meal-scan')}
               className="bg-emerald-700 rounded-[14px] px-6 py-3 mt-5"
             >
               <Text className="text-white font-bold">Start Assessment</Text>

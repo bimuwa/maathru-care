@@ -325,7 +325,7 @@ export default function MotherHomeScreen() {
           ) : (
             <View>
               <Text className="text-slate-500 text-sm">No assessment yet.</Text>
-              <TouchableOpacity onPress={() => router.push('/(mother)/detect')} className="bg-emerald-700 rounded-[12px] px-5 py-2.5 mt-3 self-start">
+              <TouchableOpacity onPress={() => router.push('/(mother)/meal-scan')} className="bg-emerald-700 rounded-[12px] px-5 py-2.5 mt-3 self-start">
                 <Text className="text-white font-semibold text-sm">Start Assessment</Text>
               </TouchableOpacity>
             </View>
