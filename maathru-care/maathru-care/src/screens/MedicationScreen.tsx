@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Alert,
 } from 'react-native';
 import { ArrowLeft, Pill, Clock, CheckCircle, Circle, Calendar, User } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -36,23 +36,37 @@ const FREQUENCY_COLORS: Record<string, string> = {
 };
 
 export default function MedicationScreen() {
-  const router = useRouter();
   const { user } = useAuth();
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
-  // Track which meds are marked taken today (stored locally per session)
   const [takenToday, setTakenToday] = useState<Set<string>>(new Set());
 
   const loadPrescriptions = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const res = await api.getPrescriptions(user.id);
-      if (res.success) setPrescriptions(res.prescriptions || []);
-      else setPrescriptions([]); // ✅ Empty state on failure
+      const res: any = await api.getPrescriptions(user.id);
+      const list = res?.prescriptions || [];
+      if (Array.isArray(list)) {
+        const safeList: Prescription[] = list.map((p: any) => ({
+          id: p.id || `p-${Math.random()}`,
+          patientId: p.patientId || p.patient_id || user.id,
+          doctorId: p.doctorId || p.doctor_id || '',
+          doctorName: p.doctorName || p.doctor_name || 'Doctor',
+          medications: Array.isArray(p.medications) ? p.medications : (typeof p.medications === 'string' ? JSON.parse(p.medications || '[]') : []),
+          notes: p.notes,
+          prescribedAt: p.prescribedAt || p.prescribed_at || new Date().toISOString(),
+          isActive: p.isActive !== false && p.is_active !== false,
+        }));
+        setPrescriptions(safeList);
+      } else {
+        setPrescriptions([]);
+      }
     } catch {
-      setPrescriptions([]); // ✅ Empty state on error (e.g. table not created yet)
-    } finally { setLoading(false); }
+      setPrescriptions([]);
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
 
   useEffect(() => { loadPrescriptions(); }, [loadPrescriptions]);
@@ -66,11 +80,17 @@ export default function MedicationScreen() {
     });
   };
 
-  const activePrescriptions = prescriptions.filter(p => p.isActive);
-  const pastPrescriptions = prescriptions.filter(p => !p.isActive);
+  const activePrescriptions = (prescriptions || []).filter(p => p.isActive);
+  const pastPrescriptions = (prescriptions || []).filter(p => !p.isActive);
 
   const allMeds = activePrescriptions.flatMap((p, pi) =>
-    p.medications.map((m, mi) => ({ ...m, key: `${pi}-${mi}`, prescriptionId: p.id, doctorName: p.doctorName, prescribedAt: p.prescribedAt }))
+    (Array.isArray(p.medications) ? p.medications : []).map((m, mi) => ({
+      ...m,
+      key: `${pi}-${mi}`,
+      prescriptionId: p.id,
+      doctorName: p.doctorName,
+      prescribedAt: p.prescribedAt,
+    }))
   );
 
   const takenCount = allMeds.filter(m => takenToday.has(m.key)).length;
@@ -147,7 +167,7 @@ export default function MedicationScreen() {
                   </View>
                 </View>
 
-                {pres.medications.map((med, i) => {
+                {(Array.isArray(pres.medications) ? pres.medications : []).map((med, i) => {
                   const key = `${prescriptions.indexOf(pres)}-${i}`;
                   const taken = takenToday.has(key);
                   const freqColor = FREQUENCY_COLORS[med.frequency] || '#64748B';
@@ -173,9 +193,9 @@ export default function MedicationScreen() {
                             <Text className="text-xs ml-1 text-slate-600">{med.duration}</Text>
                           </View>
                         </View>
-                        {med.instructions && (
+                        {med.instructions ? (
                           <Text className="text-slate-400 text-xs mt-1.5 italic">{med.instructions}</Text>
-                        )}
+                        ) : null}
                         {taken && (
                           <Text className="text-emerald-600 text-xs font-semibold mt-1">✓ Marked as taken today</Text>
                         )}
@@ -200,7 +220,7 @@ export default function MedicationScreen() {
                 {pastPrescriptions.map((pres) => (
                   <View key={pres.id} className="bg-slate-100 rounded-[16px] p-4 mb-3 opacity-70">
                     <Text className="text-slate-500 text-xs font-bold">{pres.doctorName} — {new Date(pres.prescribedAt).toLocaleDateString()}</Text>
-                    {pres.medications.map((m, i) => (
+                    {(Array.isArray(pres.medications) ? pres.medications : []).map((m, i) => (
                       <Text key={i} className="text-slate-400 text-sm mt-1">• {m.name} {m.dosage}</Text>
                     ))}
                   </View>

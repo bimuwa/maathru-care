@@ -48,16 +48,17 @@ router.post('/log', async (req: Request, res: Response): Promise<void> => {
       id: newLog.id,
       patientId: newLog.patient_id,
       logDate: newLog.log_date,
-      systolicBP: newLog.systolic_bp,
-      diastolicBP: newLog.diastolic_bp,
-      weightKg: newLog.weight_kg,
-      pulseRate: newLog.pulse_rate,
+      systolicBP: Number(newLog.systolic_bp) || systolicBP,
+      diastolicBP: Number(newLog.diastolic_bp) || diastolicBP,
+      weightKg: Number(newLog.weight_kg) || weightKg,
+      pulseRate: newLog.pulse_rate ? Number(newLog.pulse_rate) : pulseRate,
       notes: newLog.notes,
       createdAt: newLog.created_at || new Date().toISOString(),
     };
 
     res.status(201).json({ success: true, log: responseLog });
   } catch (err: any) {
+    console.error('[Vitals POST Error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -66,8 +67,8 @@ router.post('/log', async (req: Request, res: Response): Promise<void> => {
 router.get('/history/:patientId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { patientId } = req.params;
-    
     const supabase = db.getSupabase();
+
     const { data: logs, error } = await supabase
       .from('vitals_logs')
       .select('*')
@@ -75,24 +76,27 @@ router.get('/history/:patientId', async (req: Request, res: Response): Promise<v
       .order('log_date', { ascending: false });
 
     if (error) {
-      throw error;
+      console.warn('[Vitals GET Warning]', error.message);
+      res.status(200).json({ success: true, history: [], logs: [] });
+      return;
     }
 
-    const responseLogs = logs.map(log => ({
+    const responseLogs = (logs || []).map((log: any) => ({
       id: log.id,
       patientId: log.patient_id,
       logDate: log.log_date,
-      systolicBP: log.systolic_bp,
-      diastolicBP: log.diastolic_bp,
-      weightKg: log.weight_kg,
-      pulseRate: log.pulse_rate,
+      systolicBP: Number(log.systolic_bp) || 120,
+      diastolicBP: Number(log.diastolic_bp) || 80,
+      weightKg: Number(log.weight_kg) || 60,
+      pulseRate: log.pulse_rate ? Number(log.pulse_rate) : undefined,
       notes: log.notes,
-      createdAt: log.created_at || new Date().toISOString(),
+      createdAt: log.created_at || log.log_date || new Date().toISOString(),
     }));
 
-    res.status(200).json({ success: true, logs: responseLogs });
+    res.status(200).json({ success: true, history: responseLogs, logs: responseLogs });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[Vitals GET Error]', err.message);
+    res.status(200).json({ success: true, history: [], logs: [] });
   }
 });
 

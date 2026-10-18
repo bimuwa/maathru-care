@@ -21,6 +21,7 @@ router.get('/doctor/:doctorId', async (req: Request, res: Response): Promise<voi
     const alerts = data.map((a: any) => ({
       id: a.id,
       patientId: a.patient_id,
+      patientName: a.patient_name || a.alert_title?.replace('🆘 EMERGENCY SOS — ', '') || 'Unknown Patient',
       doctorId: a.doctor_id,
       alertTitle: a.alert_title,
       alertMessage: a.alert_message,
@@ -29,6 +30,9 @@ router.get('/doctor/:doctorId', async (req: Request, res: Response): Promise<voi
       isSOS: a.is_sos,
       status: a.status,
       createdAt: a.created_at,
+      alertType: a.alert_type,
+      scheduledAt: a.scheduled_at,
+      appointmentReason: a.appointment_reason,
     }));
 
     res.status(200).json({ success: true, alerts });
@@ -62,6 +66,9 @@ router.get('/patient/:patientId', async (req: Request, res: Response): Promise<v
       isSOS: a.is_sos,
       status: a.status,
       createdAt: a.created_at,
+      alertType: a.alert_type,
+      scheduledAt: a.scheduled_at,
+      appointmentReason: a.appointment_reason,
     }));
 
     res.status(200).json({ success: true, alerts });
@@ -103,6 +110,9 @@ router.patch('/:alertId/status', async (req: Request, res: Response): Promise<vo
       isSOS: data.is_sos,
       status: data.status,
       createdAt: data.created_at,
+      alertType: data.alert_type,
+      scheduledAt: data.scheduled_at,
+      appointmentReason: data.appointment_reason,
     };
 
     res.status(200).json({ success: true, alert });
@@ -125,6 +135,7 @@ router.post('/sos', async (req: Request, res: Response): Promise<void> => {
 
     const insertData = {
       patient_id: patientId,
+      patient_name: patientName,
       doctor_id: doctorId,
       alert_title: `🆘 EMERGENCY SOS — ${patientName}`,
       alert_message: `Patient ${patientName} has triggered an emergency SOS. Last BP: ${lastBP ?? 'N/A'}, Last Risk Level: ${lastRiskLevel ?? 'N/A'}.`,
@@ -145,6 +156,7 @@ router.post('/sos', async (req: Request, res: Response): Promise<void> => {
     const sosAlert = {
       id: data.id,
       patientId: data.patient_id,
+      patientName: data.patient_name || patientName,
       doctorId: data.doctor_id,
       alertTitle: data.alert_title,
       alertMessage: data.alert_message,
@@ -153,6 +165,9 @@ router.post('/sos', async (req: Request, res: Response): Promise<void> => {
       isSOS: data.is_sos,
       status: data.status,
       createdAt: data.created_at,
+      alertType: data.alert_type,
+      scheduledAt: data.scheduled_at,
+      appointmentReason: data.appointment_reason,
     };
 
     res.status(201).json({ success: true, alert: sosAlert });

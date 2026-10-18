@@ -1,9 +1,9 @@
 import { Platform } from 'react-native';
 
 const BACKEND_BASE_URL = Platform.select({
-  android: 'http://192.168.1.11:5000/api/v1',
+  android: 'http://10.103.170.59:5000/api/v1',
   ios: 'http://192.168.1.11:5000/api/v1',
-  default: 'http://192.168.1.11:5000/api/v1',
+  default: 'http://10.103.170.59:5000/api/v1',
 });
 
 // ─── Auth Types ─────────────────────────────────────────────────────────────
@@ -280,11 +280,13 @@ class ApiService {
   public async saveDoctorNotes(
     patientId: string,
     notes: string,
-    assessmentId?: string
+    assessmentId?: string,
+    doctorId?: string,
+    doctorName?: string
   ): Promise<{ success: boolean }> {
     return this.request(`/doctor/patient/${patientId}/notes`, {
       method: 'PATCH',
-      body: JSON.stringify({ notes, assessmentId }),
+      body: JSON.stringify({ notes, assessmentId, doctorId, doctorName }),
     });
   }
 
@@ -292,12 +294,17 @@ class ApiService {
     patientId: string,
     scheduledAt: string,
     reason: string,
-    doctorId: string
+    doctorId: string,
+    doctorName?: string
   ): Promise<{ success: boolean; appointment: any }> {
     return this.request(`/doctor/patient/${patientId}/appointment`, {
       method: 'POST',
-      body: JSON.stringify({ scheduledAt, reason, doctorId }),
+      body: JSON.stringify({ scheduledAt, reason, doctorId, doctorName }),
     });
+  }
+
+  public async getPatientAlerts(patientId: string): Promise<{ success: boolean; alerts: any[] }> {
+    return this.request(`/alerts/patient/${patientId}`);
   }
 
   // ─── Doctor Approval System ───────────────────────────────────────────────

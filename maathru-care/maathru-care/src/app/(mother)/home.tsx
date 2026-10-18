@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
   Alert, Modal, RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import {
   Brain, Activity, Bell, ChevronRight, Heart, AlertTriangle,
   TrendingUp, HeartPulse, Pill, ShieldAlert, Calendar, Clock,
@@ -58,7 +58,6 @@ function getDueDateInfo(gestationalWeeks: number): { weeksLeft: number; daysLeft
 }
 
 export default function MotherHomeScreen() {
-  const router = useRouter();
   const { user } = useAuth();
   const [latestRisk, setLatestRisk] = useState<RiskPredictionResult | null>(null);
   const [hasAlert, setHasAlert] = useState(false);
@@ -67,6 +66,7 @@ export default function MotherHomeScreen() {
   const [doctorStatus, setDoctorStatus] = useState<{ status: string; message?: string } | null>(null);
   const [sosLoading, setSosLoading] = useState(false);
   const [sosConfirmVisible, setSosConfirmVisible] = useState(false);
+  const [upcomingAppointment, setUpcomingAppointment] = useState<any | null>(null);
 
   const weeks = user?.gestationalAgeWeeks ?? 0;
   const trimester = getTrimester(weeks);
@@ -75,21 +75,46 @@ export default function MotherHomeScreen() {
   const fetchData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const historyRes = await api.getRiskHistory(user.id);
-      if (historyRes.success && historyRes.history.length > 0) {
-        setLatestRisk(historyRes.history[0]);
-        setHasAlert(historyRes.history[0].isAlertRequired);
+      const [historyRes, alertsRes] = await Promise.all([
+        api.getRiskHistory(user.id).catch(() => ({ success: false, history: [] })),
+        api.getPatientAlerts(user.id).catch(() => ({ success: false, alerts: [] })),
+      ]);
+
+      if (historyRes.success && (historyRes as any).history?.length > 0) {
+        setLatestRisk((historyRes as any).history[0]);
+        setHasAlert((historyRes as any).history[0].isAlertRequired);
       }
-      // Fetch doctor availability status
-      if (user.assignedDoctorId) {
-        const statusRes = await api.getDoctorStatus(user.assignedDoctorId);
-        if (statusRes.success) setDoctorStatus(statusRes);
+
+      // Check for upcoming appointment alerts
+      if (alertsRes.success) {
+        const allAlerts: any[] = (alertsRes as any).alerts ?? [];
+        const apptAlert = allAlerts.find(a =>
+          a.alertType === 'appointment' ||
+          a.alert_type === 'appointment' ||
+          a.status === 'Upcoming'
+        );
+        setUpcomingAppointment(apptAlert || null);
       }
     } catch { }
     finally { setIsLoading(false); setRefreshing(false); }
-  }, [user?.id, user?.assignedDoctorId]);
+  }, [user?.id]);
+
+  const fetchDoctorStatus = useCallback(async () => {
+    if (!user?.assignedDoctorId) return;
+    try {
+      const statusRes = await api.getDoctorStatus(user.assignedDoctorId);
+      if (statusRes.success) setDoctorStatus(statusRes);
+    } catch { }
+  }, [user?.assignedDoctorId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Poll doctor status every 10 seconds for real-time updates
+  useEffect(() => {
+    fetchDoctorStatus();
+    const interval = setInterval(fetchDoctorStatus, 10000);
+    return () => clearInterval(interval);
+  }, [fetchDoctorStatus]);
 
   const handleSOS = async () => {
     setSosConfirmVisible(false);
@@ -177,6 +202,43 @@ export default function MotherHomeScreen() {
             </>
           )}
         </TouchableOpacity>
+
+        {/* ── Appointment Notification Banner ─────────────────────────────────── */}
+        {upcomingAppointment && (
+          <TouchableOpacity
+            onPress={() => router.push({
+              pathname: '/mother-doctor-profile',
+              params: { doctorId: user?.assignedDoctorId ?? '', doctorName: user?.assignedDoctorName ?? '' }
+            })}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: '#EFF6FF',
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: '#BFDBFE',
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            <View style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 10, marginRight: 12 }}>
+              <Calendar color="#FFFFFF" size={20} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#1E40AF', fontWeight: 'bold', fontSize: 13 }}>
+                📅 Appointment Scheduled!
+              </Text>
+              <Text style={{ color: '#3B82F6', fontSize: 12, marginTop: 2 }} numberOfLines={1}>
+                {upcomingAppointment.alertMessage?.split('\n')[1]?.replace('Date & Time: ', '') ||
+                  upcomingAppointment.scheduledAt ||
+                  'Your doctor has scheduled a visit'}
+              </Text>
+              <Text style={{ color: '#93C5FD', fontSize: 10, marginTop: 2 }}>Tap to view details →</Text>
+            </View>
+            <ChevronRight color="#93C5FD" size={16} />
+          </TouchableOpacity>
+        )}
 
         {/* ── Due Date Countdown ──────────────────────────────────────────────── */}
         {dueDateInfo && dueDateInfo.weeksLeft > 0 && (
@@ -280,8 +342,8 @@ export default function MotherHomeScreen() {
           {[
             { label: 'AI Risk Assessment', sub: '13-vital analysis', icon: <Brain color="#fff" size={22} />, bg: '#15803D', onPress: () => router.push('/(mother)/detect'), dark: true },
             { label: 'Daily Symptoms', sub: 'Log today', icon: <Activity color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/wellness'), dark: false },
-            { label: 'BP & Weight', sub: 'Track vitals', icon: <HeartPulse color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/vitals' as any), dark: false },
-            { label: 'Medications', sub: 'My prescriptions', icon: <Pill color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/medications' as any), dark: false },
+            { label: 'BP & Weight', sub: 'Track vitals', icon: <HeartPulse color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/vitals'), dark: false },
+            { label: 'Medications', sub: 'My prescriptions', icon: <Pill color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/medications'), dark: false },
             { label: 'Risk Trends', sub: 'History & analysis', icon: <TrendingUp color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/trends'), dark: false },
             { label: 'Chat Doctor', sub: 'Message now', icon: <Bell color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push({ pathname: '/mother-chat', params: { doctorId: user?.assignedDoctorId ?? '', doctorName: user?.assignedDoctorName ?? 'Doctor' } }), dark: false },
           ].map((action, i) => (
@@ -354,6 +416,7 @@ export default function MotherHomeScreen() {
           </View>
         </View>
       </Modal>
+
     </ScrollView>
   );
 }

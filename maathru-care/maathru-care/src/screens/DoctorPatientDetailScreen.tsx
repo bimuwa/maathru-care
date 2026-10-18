@@ -10,7 +10,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   ArrowLeft,
   MessageCircle,
@@ -163,7 +163,6 @@ const RISK_BG: Record<string, string> = {
 };
 
 export default function DoctorPatientDetailScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
   const patientId = (params.patientId as string) ?? '';
@@ -242,7 +241,7 @@ export default function DoctorPatientDetailScreen() {
     setSavingNotes(true);
     try {
       const latestAssessmentId = riskHistory[0]?.id;
-      await api.saveDoctorNotes(patientId, doctorNotes.trim(), latestAssessmentId);
+      await api.saveDoctorNotes(patientId, doctorNotes.trim(), latestAssessmentId, user?.id, user?.fullName);
       setNotesSaved(true);
       setTimeout(() => setNotesSaved(false), 3000);
       Alert.alert('✅ Notes Saved', 'Your clinical notes have been saved and are now visible to the patient.');
@@ -260,7 +259,7 @@ export default function DoctorPatientDetailScreen() {
     }
     setSchedulingAppt(true);
     try {
-      await api.scheduleAppointment(patientId, apptDate.trim(), apptReason, user?.id ?? '');
+      await api.scheduleAppointment(patientId, apptDate.trim(), apptReason, user?.id ?? '', user?.fullName);
       setApptVisible(false);
       setApptDate('');
       setApptReason('Follow-up visit');
@@ -589,3 +588,4 @@ export default function DoctorPatientDetailScreen() {
     </>
   );
 }
+

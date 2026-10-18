@@ -13,7 +13,7 @@ import {
   Modal,
   Dimensions,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ArrowLeft, Send, Mic, Image as ImageIcon, Paperclip, Phone, X, ZoomIn } from 'lucide-react-native';
 import { api, ChatMessage } from '../services/api';
@@ -22,7 +22,6 @@ import { useAuth } from '../context/AuthContext';
 const { width: SCREEN_W } = Dimensions.get('window');
 
 export default function MotherChatScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
 
@@ -318,3 +317,4 @@ export default function MotherChatScreen() {
     </KeyboardAvoidingView>
   );
 }
+

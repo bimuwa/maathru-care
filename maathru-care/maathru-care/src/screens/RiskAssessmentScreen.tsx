@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import {
   User,
   Baby,
@@ -112,7 +112,6 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function RiskAssessmentScreen() {
-  const router = useRouter();
   const { user } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);

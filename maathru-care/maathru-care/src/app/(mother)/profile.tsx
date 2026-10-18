@@ -129,18 +129,6 @@ export default function MotherProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {/* AI Model Info */}
-        <View className="bg-emerald-50 border border-emerald-100 rounded-[20px] p-5 mb-4">
-          <Text className="text-emerald-700 font-bold text-sm mb-2">About the AI Model</Text>
-          <Text className="text-emerald-600 text-xs leading-5">
-            Maathru Care uses a tuned XGBoost classifier trained on 998 maternal health records.
-            The model achieves 98.00% accuracy on held-out test data and uses 13 clinical features
-            for risk prediction. SHAP (SHapley Additive exPlanations) is used for transparent,
-            patient-level explanation of each prediction.{'\n\n'}
-            This is a decision-support tool, not a medical diagnosis system. Always consult your
-            doctor for clinical decisions.
-          </Text>
-        </View>
 
         {/* Sign Out */}
         <TouchableOpacity

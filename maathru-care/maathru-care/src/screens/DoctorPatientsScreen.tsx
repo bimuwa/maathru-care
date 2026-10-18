@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import { Search, ChevronRight, Droplets, Calendar, UserX } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api, PatientProfile } from '../services/api';
@@ -63,7 +63,6 @@ function PatientCard({ patient, onPress }: { patient: PatientProfile; onPress: (
 
 export default function DoctorPatientsScreen() {
   const { user } = useAuth();
-  const router = useRouter();
   const [patients, setPatients] = useState<PatientProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);

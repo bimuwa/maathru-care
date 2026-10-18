@@ -9,3 +9,11 @@ node_modules/
 __pycache__/
 *.pyc
 .env
+
+# Generated archives and thesis artifacts
+*.zip
+*.docx
+*.pdf
+~$*
+thesis_images/
+

@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Brain,
   AlertTriangle,
@@ -96,7 +96,6 @@ function FactorCard({ factor }: { factor: FeatureImpact }) {
 }
 
 export default function RiskResultScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams();
   const [showFactors, setShowFactors] = useState(true);
   const [showRecommendations, setShowRecommendations] = useState(true);
@@ -189,7 +188,7 @@ export default function RiskResultScreen() {
               <View className="flex-row items-center">
                 <Brain color="#15803D" size={18} />
                 <Text className="text-slate-800 font-bold text-sm ml-2">
-                  Key Influencing Factors (SHAP AI)
+                  Key Influencing Factors
                 </Text>
               </View>
               {showFactors ? <ChevronUp color="#94A3B8" size={18} /> : <ChevronDown color="#94A3B8" size={18} />}

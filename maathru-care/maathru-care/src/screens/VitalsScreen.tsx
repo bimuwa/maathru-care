@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Alert, Dimensions,
 } from 'react-native';
 import { ArrowLeft, Plus, HeartPulse, Weight, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -23,28 +23,33 @@ interface VitalsLog {
 }
 
 function getBPStatus(systolic: number, diastolic: number): { label: string; color: string; bg: string } {
-  if (systolic >= 160 || diastolic >= 110) return { label: 'Severe Hypertension', color: '#EF4444', bg: '#FEF2F2' };
-  if (systolic >= 140 || diastolic >= 90) return { label: 'High — Preeclampsia Risk', color: '#F97316', bg: '#FFF7ED' };
-  if (systolic >= 130 || diastolic >= 80) return { label: 'Elevated', color: '#F59E0B', bg: '#FFFBEB' };
-  if (systolic < 90 || diastolic < 60) return { label: 'Low BP', color: '#3B82F6', bg: '#EFF6FF' };
+  const s = Number(systolic) || 120;
+  const d = Number(diastolic) || 80;
+  if (s >= 160 || d >= 110) return { label: 'Severe Hypertension', color: '#EF4444', bg: '#FEF2F2' };
+  if (s >= 140 || d >= 90) return { label: 'High — Preeclampsia Risk', color: '#F97316', bg: '#FFF7ED' };
+  if (s >= 130 || d >= 80) return { label: 'Elevated', color: '#F59E0B', bg: '#FFFBEB' };
+  if (s < 90 || d < 60) return { label: 'Low BP', color: '#3B82F6', bg: '#EFF6FF' };
   return { label: 'Normal', color: '#10B981', bg: '#ECFDF5' };
 }
 
-// Simple inline bar chart component — no external library needed
 function MiniBarChart({ data, color, label, unit, maxVal }: {
   data: number[]; color: string; label: string; unit: string; maxVal: number;
 }) {
-  const barWidth = Math.max(8, (SCREEN_WIDTH - 80) / Math.max(data.length, 1) - 4);
+  const validData = (data || []).map(v => Number(v) || 0);
+  const safeMax = Math.max(Number(maxVal) || 1, 1);
+  const barWidth = Math.max(8, (SCREEN_WIDTH - 80) / Math.max(validData.length, 1) - 4);
+  const latestVal = validData[0] !== undefined ? Number(validData[0]).toFixed(0) : '0';
+
   return (
     <View className="mb-2">
       <Text className="text-slate-500 text-xs font-semibold mb-2">{label}</Text>
       <View className="flex-row items-end" style={{ height: 60, gap: 3 }}>
-        {data.slice().reverse().map((val, i) => {
-          const heightPct = maxVal > 0 ? Math.max(4, (val / maxVal) * 60) : 4;
+        {validData.slice().reverse().map((val, i) => {
+          const heightPct = Math.max(4, Math.min(60, (val / safeMax) * 60));
           return (
             <View key={i} style={{ width: barWidth, alignItems: 'center' }}>
               <View
-                style={{ width: barWidth - 2, height: heightPct, backgroundColor: color, borderRadius: 3 }}
+                style={{ width: Math.max(2, barWidth - 2), height: heightPct, backgroundColor: color, borderRadius: 3 }}
               />
             </View>
           );
@@ -52,14 +57,13 @@ function MiniBarChart({ data, color, label, unit, maxVal }: {
       </View>
       <View className="flex-row justify-between mt-1">
         <Text className="text-slate-400 text-[10px]">Oldest</Text>
-        <Text className="text-slate-400 text-[10px]">Latest ({data[0]?.toFixed(0)} {unit})</Text>
+        <Text className="text-slate-400 text-[10px]">Latest ({latestVal} {unit})</Text>
       </View>
     </View>
   );
 }
 
 export default function VitalsScreen() {
-  const router = useRouter();
   const { user } = useAuth();
   const [history, setHistory] = useState<VitalsLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,12 +81,28 @@ export default function VitalsScreen() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const res = await api.getVitalsHistory(user.id);
-      if (res.success) setHistory(res.history || []);
-      else setHistory([]); // ✅ Empty state on failure
+      const res: any = await api.getVitalsHistory(user.id);
+      const items = res?.history || res?.logs || [];
+      if (Array.isArray(items)) {
+        setHistory(items.map((item: any) => ({
+          id: item.id || `v-${Math.random()}`,
+          patientId: item.patientId || item.patient_id || user.id,
+          logDate: item.logDate || item.log_date || new Date().toISOString(),
+          systolicBP: Number(item.systolicBP ?? item.systolic_bp) || 120,
+          diastolicBP: Number(item.diastolicBP ?? item.diastolic_bp) || 80,
+          weightKg: Number(item.weightKg ?? item.weight_kg) || 60,
+          pulseRate: item.pulseRate ?? item.pulse_rate ? Number(item.pulseRate ?? item.pulse_rate) : undefined,
+          notes: item.notes,
+          createdAt: item.createdAt || item.created_at || new Date().toISOString(),
+        })));
+      } else {
+        setHistory([]);
+      }
     } catch {
-      setHistory([]); // ✅ Empty state on error (e.g. table not created yet)
-    } finally { setLoading(false); }
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
@@ -91,8 +111,8 @@ export default function VitalsScreen() {
     const sys = parseFloat(systolic);
     const dia = parseFloat(diastolic);
     const wt = parseFloat(weight);
-    if (!systolic || !diastolic || !weight) {
-      Alert.alert('Missing Fields', 'Please enter Systolic BP, Diastolic BP, and Weight.');
+    if (!systolic || !diastolic || !weight || isNaN(sys) || isNaN(dia) || isNaN(wt)) {
+      Alert.alert('Missing Fields', 'Please enter valid Systolic BP, Diastolic BP, and Weight.');
       return;
     }
     if (sys < 60 || sys > 240 || dia < 30 || dia > 160) {
@@ -115,14 +135,16 @@ export default function VitalsScreen() {
       loadHistory();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save vitals.');
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const latest = history[0];
+  const latest = history.length > 0 ? history[0] : null;
   const bpStatus = latest ? getBPStatus(latest.systolicBP, latest.diastolicBP) : null;
-  const systolicData = history.slice(0, 10).map(h => h.systolicBP);
-  const diastolicData = history.slice(0, 10).map(h => h.diastolicBP);
-  const weightData = history.slice(0, 10).map(h => h.weightKg);
+  const systolicData = history.slice(0, 10).map(h => Number(h.systolicBP) || 120);
+  const diastolicData = history.slice(0, 10).map(h => Number(h.diastolicBP) || 80);
+  const weightData = history.slice(0, 10).map(h => Number(h.weightKg) || 60);
   const maxBP = Math.max(...systolicData, 160);
   const maxWeight = Math.max(...weightData, 80);
 
@@ -145,7 +167,7 @@ export default function VitalsScreen() {
           className="bg-emerald-700 rounded-[16px] py-4 flex-row items-center justify-center mb-4"
         >
           <Plus color="#fff" size={20} />
-          <Text className="text-white font-bold ml-2">{showForm ? 'Cancel' : 'Log Today\'s Vitals'}</Text>
+          <Text className="text-white font-bold ml-2">{showForm ? 'Cancel' : "Log Today's Vitals"}</Text>
         </TouchableOpacity>
 
         {/* Log Form */}
@@ -209,12 +231,12 @@ export default function VitalsScreen() {
               <View className="items-end">
                 <Text className="text-slate-800 font-bold text-2xl">{latest.weightKg}</Text>
                 <Text className="text-slate-500 text-xs">kg</Text>
-                {latest.pulseRate && (
+                {latest.pulseRate ? (
                   <View className="mt-2">
                     <Text className="text-slate-600 font-bold text-base">{latest.pulseRate} bpm</Text>
                     <Text className="text-slate-400 text-xs">pulse</Text>
                   </View>
-                )}
+                ) : null}
               </View>
             </View>
             <Text className="text-slate-400 text-xs mt-3">
@@ -263,7 +285,7 @@ export default function VitalsScreen() {
               const prev = history[i + 1];
               const bpDiff = prev ? (h.systolicBP - prev.systolicBP) : 0;
               return (
-                <View key={h.id} className="bg-white rounded-[16px] p-4 mb-3 border border-slate-100">
+                <View key={h.id || i} className="bg-white rounded-[16px] p-4 mb-3 border border-slate-100">
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1">
                       <Text className="text-slate-400 text-xs">

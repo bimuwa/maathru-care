@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert
+  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   ArrowLeft, Stethoscope, Building2, Phone, Hash,
-  FileText, Calendar, MessageCircle, Star, Clock, Shield
+  FileText, Calendar, MessageCircle, Star, Clock, Shield, CheckCircle
 } from 'lucide-react-native';
 import { api, RiskPredictionResult } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -39,7 +39,6 @@ interface DoctorProfile {
 }
 
 export default function MotherDoctorProfileScreen() {
-  const router = useRouter();
   const { user } = useAuth();
   const params = useLocalSearchParams();
 
@@ -48,46 +47,64 @@ export default function MotherDoctorProfileScreen() {
 
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
   const [riskHistory, setRiskHistory] = useState<RiskPredictionResult[]>([]);
+  const [patientAlerts, setPatientAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        // ✅ Fetch real doctor details from the list of registered doctors
-        const doctorsRes = await api.getRegisteredDoctors();
-        if (doctorsRes.success && doctorsRes.doctors) {
-          const found = doctorsRes.doctors.find((d: any) => d.id === doctorId);
-          if (found) {
-            setDoctor({
-              id: found.id,
-              fullName: found.fullName,
-              specialty: found.specialty || 'General Practitioner',
-              hospital: found.hospital || 'N/A',
-              phone: found.phone || 'N/A',
-              medicalLicense: found.medicalLicense || 'N/A',
-            });
-          }
-        }
+  const loadData = useCallback(async () => {
+    try {
+      const [doctorsRes, riskRes, alertsRes] = await Promise.all([
+        api.getRegisteredDoctors().catch(() => ({ success: false, doctors: [] })),
+        user?.id ? api.getRiskHistory(user.id).catch(() => ({ success: false, history: [] })) : Promise.resolve({ success: false, history: [] }),
+        user?.id ? api.getPatientAlerts(user.id).catch(() => ({ success: false, alerts: [] })) : Promise.resolve({ success: false, alerts: [] }),
+      ]);
 
-        // Fetch patient's risk history for doctor feedback
-        if (user?.id) {
-          const res = await api.getRiskHistory(user.id);
-          if (res.success) setRiskHistory(res.history ?? []);
+      if (doctorsRes.success && doctorsRes.doctors) {
+        const found = doctorsRes.doctors.find((d: any) => d.id === doctorId);
+        if (found) {
+          setDoctor({
+            id: found.id,
+            fullName: found.fullName,
+            specialty: found.specialty || 'General Practitioner',
+            hospital: found.hospital || 'N/A',
+            phone: found.phone || 'N/A',
+            medicalLicense: found.medicalLicense || 'N/A',
+          });
         }
-      } catch (e) {
-        console.warn('Failed to load doctor profile:', e);
-      } finally {
-        setLoading(false);
       }
-    };
-    load();
+
+      if (riskRes.success) setRiskHistory((riskRes as any).history ?? []);
+      if (alertsRes.success) setPatientAlerts((alertsRes as any).alerts ?? []);
+    } catch (e) {
+      console.warn('Failed to load doctor profile:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [doctorId, user?.id]);
 
+  useEffect(() => { loadData(); }, [loadData]);
+
   const displayName = doctor?.fullName || doctorNameParam;
+
+  // Clinical notes: from risk_assessments via riskHistory
   const recordsWithFeedback = riskHistory.filter(r => r.doctorNotes && r.doctorNotes.trim().length > 0);
 
+  // Also get standalone clinical_note alerts (added when doctor saves notes)
+  const clinicalNoteAlerts = patientAlerts.filter(a => a.alertType === 'clinical_note' || (a.alert_type === 'clinical_note'));
+
+  // Appointments from alerts table
+  const appointmentAlerts = patientAlerts.filter(a =>
+    a.alertType === 'appointment' || (a.alert_type === 'appointment') ||
+    a.status === 'Upcoming' || a.status === 'Follow-up scheduled'
+  );
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC' }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#F8FAFC' }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor="#15803D" />}
+    >
       {/* Header */}
       <View style={{ backgroundColor: '#15803D', paddingTop: 56, paddingBottom: 40, paddingHorizontal: 20 }}>
         <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
@@ -135,12 +152,34 @@ export default function MotherDoctorProfileScreen() {
           )}
         </View>
 
-        {/* Doctor Feedback */}
+        {/* Doctor Feedback / Clinical Notes */}
         <View style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
-          <Text style={{ color: '#1E293B', fontWeight: 'bold', fontSize: 14, marginBottom: 12 }}>Doctor Feedback</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <FileText color="#15803D" size={16} />
+            <Text style={{ color: '#1E293B', fontWeight: 'bold', fontSize: 14, marginLeft: 8 }}>Doctor Feedback</Text>
+          </View>
           {loading ? (
             <ActivityIndicator size="small" color="#15803D" />
+          ) : clinicalNoteAlerts.length > 0 ? (
+            // Show standalone clinical note alerts (most recent from doctor)
+            clinicalNoteAlerts.map((alert: any, i: number) => (
+              <View key={i} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={{ color: '#94A3B8', fontSize: 11 }}>
+                    {alert.createdAt ? new Date(alert.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                    <CheckCircle color="#10B981" size={10} />
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#10B981', marginLeft: 3 }}>Saved Note</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, borderLeftWidth: 3, borderLeftColor: '#15803D' }}>
+                  <Text style={{ color: '#475569', fontSize: 13, lineHeight: 20 }}>{alert.alertMessage}</Text>
+                </View>
+              </View>
+            ))
           ) : recordsWithFeedback.length > 0 ? (
+            // Fallback: notes attached to risk assessments
             recordsWithFeedback.map((record, i) => (
               <View key={i} style={{ borderBottomWidth: 1, borderBottomColor: '#F8FAFC', paddingBottom: 12, marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -151,9 +190,8 @@ export default function MotherDoctorProfileScreen() {
                     <Text style={{ fontSize: 11, fontWeight: 'bold', color: RISK_COLORS[record.riskLevel] ?? '#10B981' }}>{record.riskLevel}</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12 }}>
-                  <FileText color="#94A3B8" size={14} />
-                  <Text style={{ color: '#475569', fontSize: 13, marginTop: 4 }}>{record.doctorNotes}</Text>
+                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, borderLeftWidth: 3, borderLeftColor: '#15803D' }}>
+                  <Text style={{ color: '#475569', fontSize: 13, lineHeight: 20 }}>{record.doctorNotes}</Text>
                 </View>
               </View>
             ))
@@ -162,20 +200,64 @@ export default function MotherDoctorProfileScreen() {
               <FileText color="#D1FAE5" size={36} />
               <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8 }}>No doctor feedback yet</Text>
               <Text style={{ color: '#CBD5E1', fontSize: 11, textAlign: 'center', marginTop: 4 }}>
-                Feedback will appear after your doctor reviews your risk assessments.
+                Feedback will appear after your doctor reviews your assessments.
               </Text>
             </View>
           )}
         </View>
 
-        {/* Appointment Placeholder */}
+        {/* Appointment History */}
         <View style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, marginBottom: 40, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
-          <Text style={{ color: '#1E293B', fontWeight: 'bold', fontSize: 14, marginBottom: 12 }}>Appointment History</Text>
-          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-            <Calendar color="#D1FAE5" size={36} />
-            <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8 }}>No appointments scheduled</Text>
-            <Text style={{ color: '#CBD5E1', fontSize: 11, textAlign: 'center', marginTop: 4 }}>Chat with your doctor to schedule your next visit.</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Calendar color="#2563EB" size={16} />
+            <Text style={{ color: '#1E293B', fontWeight: 'bold', fontSize: 14, marginLeft: 8 }}>Appointment History</Text>
           </View>
+          {loading ? (
+            <ActivityIndicator size="small" color="#2563EB" />
+          ) : appointmentAlerts.length > 0 ? (
+            appointmentAlerts.map((appt: any, i: number) => (
+              <View key={i} style={{
+                backgroundColor: '#EFF6FF',
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 10,
+                borderLeftWidth: 3,
+                borderLeftColor: '#2563EB',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Calendar color="#2563EB" size={13} />
+                    <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 13, marginLeft: 5 }}>
+                      {appt.alertTitle?.replace('📅 ', '') || 'Appointment'}
+                    </Text>
+                  </View>
+                  <View style={{
+                    backgroundColor: appt.status === 'Upcoming' ? '#DBEAFE' : '#D1FAE5',
+                    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10
+                  }}>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: appt.status === 'Upcoming' ? '#1D4ED8' : '#065F46' }}>
+                      {appt.status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={{ color: '#1E40AF', fontSize: 13, fontWeight: '600', marginBottom: 2 }}>
+                  <Clock color="#3B82F6" size={11} /> {appt.scheduledAt || appt.scheduled_at || 'Date TBC'}
+                </Text>
+                <Text style={{ color: '#3B82F6', fontSize: 12 }}>{appt.alertMessage}</Text>
+                <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 4 }}>
+                  Scheduled: {appt.createdAt ? new Date(appt.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+              <Calendar color="#BFDBFE" size={36} />
+              <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8 }}>No appointments scheduled</Text>
+              <Text style={{ color: '#CBD5E1', fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+                Chat with your doctor to schedule your next visit.
+              </Text>
+            </View>
+          )}
         </View>
       </View>
     </ScrollView>

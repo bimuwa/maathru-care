@@ -33,7 +33,7 @@ router.get('/patient/:patientId/summary', (req: Request, res: Response): void =>
 router.patch('/patient/:patientId/notes', async (req: Request, res: Response): Promise<void> => {
   try {
     const { patientId } = req.params;
-    const { notes, assessmentId } = req.body;
+    const { notes, assessmentId, doctorId, doctorName } = req.body;
     const supabase = db.getSupabase();
 
     if (!notes) {
@@ -41,6 +41,7 @@ router.patch('/patient/:patientId/notes', async (req: Request, res: Response): P
       return;
     }
 
+    // 1. Save notes to risk_assessments table (existing logic)
     if (assessmentId) {
       await supabase
         .from('risk_assessments')
@@ -55,7 +56,7 @@ router.patch('/patient/:patientId/notes', async (req: Request, res: Response): P
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
-      
+
       if (latest) {
         await supabase
           .from('risk_assessments')
@@ -64,8 +65,40 @@ router.patch('/patient/:patientId/notes', async (req: Request, res: Response): P
       }
     }
 
+    // 2. Also insert a standalone alert record of type 'clinical_note' 
+    //    so it appears in the patient's profile even without a risk assessment
+    const { data: patient } = await supabase
+      .from('users')
+      .select('full_name, assigned_doctor_id')
+      .eq('id', patientId)
+      .single();
+
+    const resolvedDoctorId = doctorId || patient?.assigned_doctor_id;
+    const resolvedDoctorName = doctorName || 'Your Doctor';
+
+    // Remove old pending clinical_note alerts for this patient first (replace with new)
+    await supabase
+      .from('alerts')
+      .delete()
+      .eq('patient_id', patientId)
+      .eq('alert_type', 'clinical_note');
+
+    await supabase.from('alerts').insert({
+      patient_id: patientId,
+      patient_name: patient?.full_name || 'Patient',
+      doctor_id: resolvedDoctorId,
+      alert_title: `📋 Clinical Note from ${resolvedDoctorName}`,
+      alert_message: notes,
+      alert_type: 'clinical_note',
+      risk_level: 'Low',
+      probability: 0,
+      is_sos: false,
+      status: 'Active',
+    });
+
     res.status(200).json({ success: true, message: 'Doctor notes saved successfully' });
   } catch (err: any) {
+    console.error('[Doctor Notes Error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -74,7 +107,7 @@ router.patch('/patient/:patientId/notes', async (req: Request, res: Response): P
 router.post('/patient/:patientId/appointment', async (req: Request, res: Response): Promise<void> => {
   try {
     const { patientId } = req.params;
-    const { scheduledAt, reason, doctorId } = req.body;
+    const { scheduledAt, reason, doctorId, doctorName } = req.body;
     const supabase = db.getSupabase();
 
     if (!scheduledAt) {
@@ -82,6 +115,7 @@ router.post('/patient/:patientId/appointment', async (req: Request, res: Respons
       return;
     }
 
+    // 1. Update risk assessment scheduled followup
     const { data: latest } = await supabase
       .from('risk_assessments')
       .select('id')
@@ -89,7 +123,7 @@ router.post('/patient/:patientId/appointment', async (req: Request, res: Respons
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
-    
+
     if (latest) {
       await supabase
         .from('risk_assessments')
@@ -97,24 +131,62 @@ router.post('/patient/:patientId/appointment', async (req: Request, res: Respons
         .eq('id', latest.id);
     }
 
+    // 2. Update any pending alerts
     await supabase
       .from('alerts')
       .update({ scheduled_followup_at: scheduledAt, status: 'Follow-up scheduled' })
       .eq('patient_id', patientId)
       .eq('status', 'Pending');
 
+    // 3. Fetch patient info for the alert
+    const { data: patient } = await supabase
+      .from('users')
+      .select('full_name, assigned_doctor_id')
+      .eq('id', patientId)
+      .single();
+
+    const resolvedDoctorId = doctorId || patient?.assigned_doctor_id;
+    const resolvedDoctorName = doctorName || 'Your Doctor';
+    const resolvedReason = reason || 'Follow-up visit';
+
+    // 4. Insert appointment alert so patient sees it on their profile & home
+    //    Remove old pending appointments for same patient first
+    await supabase
+      .from('alerts')
+      .delete()
+      .eq('patient_id', patientId)
+      .eq('alert_type', 'appointment')
+      .eq('status', 'Upcoming');
+
+    const { data: apptAlert } = await supabase.from('alerts').insert({
+      patient_id: patientId,
+      patient_name: patient?.full_name || 'Patient',
+      doctor_id: resolvedDoctorId,
+      alert_title: `📅 Appointment Scheduled`,
+      alert_message: `Your doctor has scheduled an appointment for you.\n\nDate & Time: ${scheduledAt}\nReason: ${resolvedReason}`,
+      alert_type: 'appointment',
+      scheduled_at: scheduledAt,
+      appointment_reason: resolvedReason,
+      risk_level: 'Low',
+      probability: 0,
+      is_sos: false,
+      status: 'Upcoming',
+    }).select().single();
+
     const appt: any = {
-      id: `appt-${Date.now()}`,
+      id: apptAlert?.id ?? `appt-${Date.now()}`,
       patientId,
-      doctorId: doctorId || 'doc-elizabeth-001',
+      doctorId: resolvedDoctorId,
+      doctorName: resolvedDoctorName,
       scheduledAt,
-      reason: reason || 'Follow-up visit',
+      reason: resolvedReason,
       status: 'scheduled',
       createdAt: new Date().toISOString(),
     };
 
     res.status(201).json({ success: true, appointment: appt });
   } catch (err: any) {
+    console.error('[Appointment Error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -124,23 +196,23 @@ router.get('/:doctorId/status', async (req: Request, res: Response): Promise<voi
   try {
     const { doctorId } = req.params;
     const supabase = db.getSupabase();
-    
+
     const { data, error } = await supabase
       .from('users')
       .select('doctor_status, updated_at')
       .eq('id', doctorId)
       .single();
-      
+
     if (error || !data) {
       res.status(200).json({ success: true, doctorId, status: 'available', updatedAt: new Date().toISOString() });
       return;
     }
-    
-    res.status(200).json({ 
-      success: true, 
-      doctorId, 
-      status: data.doctor_status || 'available', 
-      updatedAt: data.updated_at || new Date().toISOString() 
+
+    res.status(200).json({
+      success: true,
+      doctorId,
+      status: data.doctor_status || 'available',
+      updatedAt: data.updated_at || new Date().toISOString()
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -167,7 +239,7 @@ router.patch('/:doctorId/status', async (req: Request, res: Response): Promise<v
       .from('users')
       .update(updateData)
       .eq('id', doctorId);
-      
+
     if (error) throw error;
 
     res.status(200).json({ success: true, doctorId, status, updatedAt: updateData.updated_at, message });
@@ -182,7 +254,6 @@ router.get('/:doctorId/patients', async (req: Request, res: Response): Promise<v
     const { doctorId } = req.params;
     const supabase = db.getSupabase();
 
-    // ✅ Use only columns that actually exist in our users table schema
     const { data: patients, error } = await supabase
       .from('users')
       .select('id, full_name, age, blood_group, gestational_week, phone, email, approval_status')
@@ -195,7 +266,6 @@ router.get('/:doctorId/patients', async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Fetch the latest risk assessment for each patient in one batch query
     const patientIds = (patients || []).map((p: any) => p.id);
     let riskMap: Record<string, any> = {};
 
@@ -206,7 +276,6 @@ router.get('/:doctorId/patients', async (req: Request, res: Response): Promise<v
         .in('patient_id', patientIds)
         .order('created_at', { ascending: false });
 
-      // Keep only the latest risk per patient
       (allRisks || []).forEach((r: any) => {
         if (!riskMap[r.patient_id]) {
           riskMap[r.patient_id] = r;

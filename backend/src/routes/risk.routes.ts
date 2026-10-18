@@ -31,23 +31,30 @@ router.post('/predict', async (req: Request, res: Response): Promise<void> => {
 
     const predictionResult = await AiClientService.predictRisk(validated);
 
+    // ✅ Do NOT set id — let Supabase auto-generate the UUID
+    const { data: savedAssessment, error: insertError } = await supabase
+      .from('risk_assessments')
+      .insert({
+        patient_id: patientId,
+        risk_level: predictionResult.riskLevel,
+        high_risk_probability: predictionResult.highRiskProbability,
+        input_data: validated,
+        shap_values: (predictionResult as any).shapValues,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[RiskPredict] Failed to save assessment:', insertError.message);
+      // Still return result even if save fails so user sees the assessment
+    }
+
     const assessment = {
       ...predictionResult,
-      id: `ast-${Date.now()}`,
+      id: savedAssessment?.id ?? `ast-${Date.now()}`,
       patientId,
-      createdAt: new Date().toISOString(),
+      createdAt: savedAssessment?.created_at ?? new Date().toISOString(),
     };
-
-    // Save to Supabase risk_assessments
-    await supabase.from('risk_assessments').insert({
-      id: assessment.id,
-      patient_id: patientId,
-      risk_level: predictionResult.riskLevel,
-      high_risk_probability: predictionResult.highRiskProbability,
-      input_data: validated,
-      shap_values: (predictionResult as any).shapValues,
-      created_at: assessment.createdAt
-    });
 
     // Update patient's current risk level in users table
     await supabase.from('users').update({
@@ -71,20 +78,19 @@ router.post('/predict', async (req: Request, res: Response): Promise<void> => {
           .eq('id', patientId)
           .single();
 
+        // ✅ Do NOT set id — let Supabase auto-generate the UUID
         await supabase.from('alerts').insert({
-          id: `alt-${Date.now()}`,
           patient_id: patientId,
           patient_name: patient?.full_name || 'Patient',
           patient_age: validated.age,
           gestational_age: validated.gestationalAge,
-          doctor_id: patient?.assigned_doctor_id || 'doc-elizabeth-001',
-          assessment_id: assessment.id,
+          doctor_id: patient?.assigned_doctor_id,
+          assessment_id: savedAssessment?.id,
           risk_level: predictionResult.riskLevel === 'Very High' ? 'Very High' : 'High',
           probability: predictionResult.highRiskProbability,
-          alert_title: `${predictionResult.riskLevel} Maternal Risk Flagged (${predictionResult.highRiskProbability.toFixed(1)}%)`,
+          alert_title: `${predictionResult.riskLevel} Maternal Risk Flagged (${(predictionResult.highRiskProbability * 100).toFixed(1)}%)`,
           alert_message: predictionResult.summary,
           status: 'Pending',
-          created_at: new Date().toISOString(),
         });
       }
     }

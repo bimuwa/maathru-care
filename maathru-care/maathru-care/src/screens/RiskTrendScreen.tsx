@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import {
   TrendingUp,
   TrendingDown,
@@ -54,7 +54,6 @@ function getDeltaLabel(current: number, previous: number) {
 }
 
 export default function RiskTrendScreen() {
-  const router = useRouter();
   const { user } = useAuth();
   const [history, setHistory] = useState<RiskPredictionResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
