@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "maathru-care",
+    "slug": "tharindunuwantha",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/maathru-care-logo.jpg",
+    "scheme": "maathrucare",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/expo.icon"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/maathru-care-logo.jpg"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.tharindunuwantha2steam.tharindunuwantha"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/maathru-care-logo.jpg"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/maathru-care-logo.jpg",
+          "imageWidth": 200
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "508941b5-f6e2-4af0-8e37-344f2fbd0484"
+      }
+    },
+    "owner": "tharindunuwantha2s-team"
+  }
+}

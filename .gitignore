@@ -6,9 +6,24 @@ MEMBER_2_TODO.md
 .venv/
 .idea/
 node_modules/
+**/node_modules/
 __pycache__/
 *.pyc
 .env
+
+# Mobile & Build ignores
+**/.expo/
+**/dist/
+**/web-build/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+.DS_Store
+bin/
 
 # Generated archives and thesis artifacts
 *.zip
@@ -16,4 +31,3 @@ __pycache__/
 *.pdf
 ~$*
 thesis_images/
-

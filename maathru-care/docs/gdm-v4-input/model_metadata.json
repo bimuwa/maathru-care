@@ -1,0 +1,21 @@
+{
+  "dataset": "Gestational Diabetic Dat Set.xlsx",
+  "sheet": "GDM-Final2022",
+  "seed": 2026,
+  "features_in_order": [
+    "Age",
+    "No of Pregnancy",
+    "Family History",
+    "unexplained prenetal loss",
+    "Sedentary Lifestyle"
+  ],
+  "selected_algorithm": "RandomForest",
+  "threshold": 0.3,
+  "threshold_reason": "Max validation F2 with precision >= 0.45 (research-only constraint)",
+  "train_test_split": "stratified random 70/15/15, exact duplicate removal before split",
+  "caution": "Do not deploy as clinical diagnosis. Confirm feature meanings and external validation.",
+  "versions": {
+    "python": "3.13.16",
+    "scikit_learn": "1.6.1"
+  }
+}
