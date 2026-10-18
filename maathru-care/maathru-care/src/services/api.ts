@@ -1,9 +1,9 @@
 import { Platform } from 'react-native';
 
 const BACKEND_BASE_URL = Platform.select({
-  android: 'http://10.103.170.59:5000/api/v1',
+  android: 'http://192.168.1.11:5000/api/v1',
   ios: 'http://192.168.1.11:5000/api/v1',
-  default: 'http://10.103.170.59:5000/api/v1',
+  default: 'http://localhost:5000/api/v1',
 });
 
 // ─── Auth Types ─────────────────────────────────────────────────────────────
