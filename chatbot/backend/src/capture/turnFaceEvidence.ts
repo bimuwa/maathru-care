@@ -52,7 +52,6 @@
  */
 import { buildFaceEvidence, type FaceEvidence } from '../evidence/faceEvidence.js';
 import { FER_SERVICE_CLASS_ORDER, type AccumulatorSnapshot, type FerProbabilities } from './frameAccumulator.js';
-import { applyBaseline, type FaceBaseline } from './faceBaseline.js';
 
 export interface TurnFaceEvidence {
   /** §A4 face evidence, or `null` when zero valid frames contributed — the
@@ -90,23 +89,14 @@ function argmaxMeanClass(mean: FerProbabilities): string {
  * of one vector IS that vector, used normally. Whether one frame *should*
  * qualify is open ML/product question Q-C3B-1 — not decided here.
  */
-export function computeTurnFaceEvidence(
-  snapshot: AccumulatorSnapshot,
-  now: number = Date.now(),
-  baseline: FaceBaseline | null = null,
-): TurnFaceEvidence {
+export function computeTurnFaceEvidence(snapshot: AccumulatorSnapshot, now: number = Date.now()): TurnFaceEvidence {
   const sessionElapsedMs = now - snapshot.startedAt;
 
   if (snapshot.count === 0 || snapshot.meanVector === null || snapshot.modelVersion === null) {
     return { evidence: null, frameCount: 0, sessionElapsedMs };
   }
 
-  // Read relative to the user's resting face when one exists for this FER model
-  // (capture/faceBaseline.ts, owner decision 2026-10-17).
-  const mean =
-    baseline && baseline.modelVersion === snapshot.modelVersion
-      ? applyBaseline(snapshot.meanVector, baseline.probabilities)
-      : snapshot.meanVector;
+  const mean = snapshot.meanVector;
   const predictedClass = argmaxMeanClass(mean); // C0.9 RULED — see file header / argmaxMeanClass
 
   const evidence = buildFaceEvidence({
