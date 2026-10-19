@@ -6,6 +6,7 @@ import {
 import { router } from 'expo-router';
 import { ArrowLeft, Baby, Clock, Heart, AlertTriangle, CheckCircle, Play, Square } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import { useKickSession } from '../context/KickSessionContext';
 import { api } from '../services/api';
 
 function formatDuration(totalSec: number) {
@@ -25,10 +26,7 @@ function formatDate(iso: string) {
 
 export default function KickCounterScreen() {
   const { user } = useAuth();
-  const [inSession, setInSession] = useState(false);
-  const [kickCount, setKickCount] = useState(0);
-  const [elapsedSec, setElapsedSec] = useState(0);
-  const [sessionStart, setSessionStart] = useState('');
+  const { session, startSession: globalStart, recordKick, endSession: globalEnd, resetSession } = useKickSession();
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,7 +34,6 @@ export default function KickCounterScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const TARGET = 10;
-  const timerRef = useRef<any>(null);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
 
@@ -51,31 +48,21 @@ export default function KickCounterScreen() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
+  // Watch for auto-completion (when target reached via floating bubble or here)
   useEffect(() => {
-    if (inSession) {
-      timerRef.current = setInterval(() => setElapsedSec(p => p + 1), 1000);
+    if (!session.isActive && session.kickCount >= TARGET && session.kickCount > 0 && !showResult) {
+      handleSessionEnd(true);
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [inSession]);
+  }, [session.isActive, session.kickCount]);
 
-  // Auto-complete if target reached
-  useEffect(() => {
-    if (inSession && kickCount >= TARGET) {
-      setTimeout(() => endSession(true), 300);
-    }
-  }, [kickCount]);
-
-  const startSession = () => {
-    setKickCount(0);
-    setElapsedSec(0);
-    setSessionStart(new Date().toISOString());
+  const handleStart = () => {
     setShowResult(null);
-    setInSession(true);
+    globalStart();
   };
 
   const handleKick = () => {
-    if (!inSession) return;
-    setKickCount(p => p + 1);
+    if (!session.isActive) return;
+    recordKick();
     // Pulse animation
     Animated.sequence([
       Animated.spring(scaleAnim, { toValue: 1.15, useNativeDriver: true, speed: 50 }),
@@ -88,22 +75,20 @@ export default function KickCounterScreen() {
     ]).start();
   };
 
-  const endSession = async (autoCompleted = false) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setInSession(false);
-    const completed = autoCompleted || kickCount >= TARGET;
-    const durationMin = +(elapsedSec / 60).toFixed(1);
-    setShowResult({ completed, kicks: kickCount, duration: durationMin });
+  const handleSessionEnd = async (autoCompleted = false) => {
+    const result = globalEnd();
+    const completed = autoCompleted || result.completed;
+    setShowResult({ completed, kicks: result.kicks, duration: result.durationMin });
 
-    if (!user?.id || kickCount === 0) return;
+    if (!user?.id || result.kicks === 0) return;
     setSaving(true);
     try {
       await api.saveKickSession({
         patientId: user.id,
-        sessionStart,
+        sessionStart: session.sessionStart,
         sessionEnd: new Date().toISOString(),
-        totalKicks: kickCount,
-        durationMinutes: durationMin,
+        totalKicks: result.kicks,
+        durationMinutes: result.durationMin,
         targetKicks: TARGET,
         completed,
       });
@@ -114,7 +99,8 @@ export default function KickCounterScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await fetchHistory(); setRefreshing(false); };
 
-  const progress = Math.min(kickCount / TARGET, 1);
+  const progress = Math.min(session.kickCount / TARGET, 1);
+  const inSession = session.isActive;
 
   return (
     <ScrollView className="flex-1 bg-[#F8FAFC]" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#15803D" />}>
@@ -162,8 +148,16 @@ export default function KickCounterScreen() {
               </View>
             </View>
 
+            {/* Floating Bubble Info */}
+            <View className="bg-emerald-50 rounded-[16px] p-4 mb-4 border border-emerald-200">
+              <Text className="text-emerald-800 font-bold text-sm mb-1">💡 Floating Counter</Text>
+              <Text className="text-emerald-700 text-xs leading-4">
+                After starting, a floating bubble will appear on all screens. You can navigate away and still record kicks from anywhere in the app!
+              </Text>
+            </View>
+
             {/* Start Button */}
-            <TouchableOpacity onPress={startSession} className="bg-emerald-600 rounded-[20px] py-5 items-center mb-6" style={{ shadowColor: '#15803D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 }}>
+            <TouchableOpacity onPress={handleStart} className="bg-emerald-600 rounded-[20px] py-5 items-center mb-6" style={{ shadowColor: '#15803D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 }}>
               <View className="flex-row items-center gap-2">
                 <Play color="#fff" size={22} fill="#fff" />
                 <Text className="text-white font-bold text-lg">Start Counting</Text>
@@ -178,7 +172,7 @@ export default function KickCounterScreen() {
             {/* Timer */}
             <View className="flex-row items-center gap-2 mb-6">
               <Clock color="#64748B" size={16} />
-              <Text className="text-slate-600 text-lg font-mono">{formatDuration(elapsedSec)}</Text>
+              <Text className="text-slate-600 text-lg font-mono">{formatDuration(session.elapsedSec)}</Text>
             </View>
 
             {/* Heart flash */}
@@ -188,7 +182,7 @@ export default function KickCounterScreen() {
 
             {/* Kick Count */}
             <Text className="text-slate-400 text-sm font-semibold mb-2">KICKS</Text>
-            <Text className="text-slate-800 text-5xl font-bold mb-1">{kickCount} <Text className="text-slate-400 text-2xl">/ {TARGET}</Text></Text>
+            <Text className="text-slate-800 text-5xl font-bold mb-1">{session.kickCount} <Text className="text-slate-400 text-2xl">/ {TARGET}</Text></Text>
 
             {/* Progress Bar */}
             <View className="w-full bg-slate-100 rounded-full h-3 mt-4 mb-8 overflow-hidden">
@@ -210,8 +204,13 @@ export default function KickCounterScreen() {
 
             <Text className="text-slate-400 text-xs mt-6 text-center">Tap each time you feel a kick, roll, or movement</Text>
 
+            {/* Floating Bubble Reminder */}
+            <View className="bg-blue-50 rounded-[14px] px-4 py-2.5 mt-4 flex-row items-center">
+              <Text className="text-blue-600 text-xs">💡 You can navigate away — the floating bubble stays active!</Text>
+            </View>
+
             {/* End Session */}
-            <TouchableOpacity onPress={() => endSession(false)} className="flex-row items-center gap-2 bg-slate-100 rounded-[16px] px-6 py-3.5 mt-6">
+            <TouchableOpacity onPress={() => handleSessionEnd(false)} className="flex-row items-center gap-2 bg-slate-100 rounded-[16px] px-6 py-3.5 mt-4">
               <Square color="#64748B" size={16} />
               <Text className="text-slate-600 font-semibold">End Session</Text>
             </TouchableOpacity>
@@ -234,7 +233,7 @@ export default function KickCounterScreen() {
               </Text>
             )}
             {saving && <ActivityIndicator color="#15803D" className="mt-3" />}
-            <TouchableOpacity onPress={() => { setShowResult(null); }} className="bg-white rounded-[14px] py-3 items-center mt-4">
+            <TouchableOpacity onPress={() => { setShowResult(null); resetSession(); }} className="bg-white rounded-[14px] py-3 items-center mt-4">
               <Text className="text-slate-700 font-semibold">New Session</Text>
             </TouchableOpacity>
           </View>
