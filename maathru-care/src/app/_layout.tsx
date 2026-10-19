@@ -27,6 +27,8 @@ export default function RootLayout() {
 
         <Stack.Screen name="risk-result" options={{ headerShown: false }} />
         <Stack.Screen name="doctor-patient-detail" options={{ headerShown: false }} />
+        <Stack.Screen name="doctor-eating-pattern" options={{ headerShown: false }} />
+        <Stack.Screen name="doctor-nutrition-review" options={{ headerShown: false }} />
         <Stack.Screen name="doctor-chat" options={{ headerShown: false }} />
         <Stack.Screen name="mother-chat" options={{ headerShown: false }} />
         <Stack.Screen name="mother-doctor-profile" options={{ headerShown: false }} />

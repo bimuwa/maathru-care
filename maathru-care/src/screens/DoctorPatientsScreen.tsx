@@ -9,7 +9,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Search, ChevronRight, Droplets, Calendar, UserX } from 'lucide-react-native';
+import { Search, ChevronRight, Droplets, Calendar, UserX, Utensils } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api, PatientProfile } from '../services/api';
 
@@ -32,11 +32,11 @@ function RiskBadge({ level }: { level: string }) {
   );
 }
 
-function PatientCard({ patient, onPress }: { patient: PatientProfile; onPress: () => void }) {
+function PatientCard({ patient, onPress, onViewEatingPattern }: { patient: PatientProfile; onPress: () => void; onViewEatingPattern: () => void }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}
-      className="bg-white rounded-[20px] p-4 mb-3 border border-slate-100"
+    <View className="bg-white rounded-[20px] p-4 mb-3 border border-slate-100"
       style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <View className="flex-row justify-between items-start mb-3">
         <View className="flex-1 mr-2">
           <Text className="text-slate-800 font-bold text-base mb-1">{patient.fullName}</Text>
@@ -57,7 +57,13 @@ function PatientCard({ patient, onPress }: { patient: PatientProfile; onPress: (
           <ChevronRight size={14} color="#15803D" />
         </View>
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`View ${patient.fullName}'s eating pattern`} onPress={onViewEatingPattern} className="mt-3 min-h-11 rounded-xl bg-emerald-50 border border-emerald-100 flex-row items-center justify-center gap-2">
+        <Utensils size={16} color="#047857" />
+        <Text className="text-emerald-800 text-xs font-bold">View eating pattern</Text>
+        <ChevronRight size={15} color="#047857" />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -119,7 +125,8 @@ export default function DoctorPatientsScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <PatientCard patient={item}
-            onPress={() => router.push({ pathname: '/doctor-patient-detail', params: { patientId: item.id } })} />
+            onPress={() => router.push({ pathname: '/doctor-patient-detail', params: { patientId: item.id } })}
+            onViewEatingPattern={() => router.push({ pathname: '/doctor-eating-pattern', params: { patientId: item.id, patientName: item.fullName } })} />
         )}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#15803D" />}
         contentContainerStyle={{ padding: 20, paddingTop: 16, paddingBottom: 100 }}

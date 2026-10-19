@@ -256,6 +256,13 @@ export default function DoctorHomeScreen() {
         )}
 
         <Text className="text-slate-800 font-bold text-base mt-6 mb-3">Quick Actions</Text>
+        <TouchableOpacity onPress={() => router.push('/doctor-nutrition-review')} activeOpacity={0.8}
+          className="bg-white rounded-[20px] p-4 mb-3 flex-row items-center border border-emerald-100"
+          style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}>
+          <View className="bg-emerald-50 p-3 rounded-full mr-3"><Activity size={22} color="#15803D" /></View>
+          <View className="flex-1"><Text className="text-slate-800 font-bold text-sm">Mother Nutrition & Camera Data Review</Text><Text className="text-slate-500 text-xs mt-1">Search mothers, review labels and food records</Text></View>
+          <ChevronRight size={18} color="#15803D" />
+        </TouchableOpacity>
         <View className="flex-row gap-3">
           <TouchableOpacity onPress={() => router.push('/(doctor)/patients')} activeOpacity={0.8}
             className="flex-1 bg-[#15803D] rounded-[20px] p-4 items-center"

@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { foodDiaryService, type SavedDiaryMeal } from '@/services/foodDiaryService';
 import {
   DIARY_NUTRIENTS, aggregateDiaryDay, aggregateDiaryWeek, localDateString, mondayOf,
-  parseLocalDate, shiftLocalDate, recordedNumber, isUnverifiedCustomFood, diaryReportCsv, type DiaryDay, type DiaryNutrientKey,
+  parseLocalDate, shiftLocalDate, recordedNumber, isUnverifiedCustomFood, isRejectedCustomFood, diaryReportCsv, type DiaryDay, type DiaryNutrientKey,
 } from '@/services/wellnessDiaryAggregation';
 
 type Mode = 'daily' | 'weekly';
@@ -52,8 +52,8 @@ export function MealList({ meals }: { meals: readonly SavedDiaryMeal[] }) {
         const available = DIARY_NUTRIENTS.filter((entry) => recordedNumber(item[entry.key]) !== null);
         return <View key={item.id} style={{ paddingTop: 5, borderTopWidth: 1, borderTopColor: '#E2E8F0', gap: 3 }}>
           <Text style={{ color: '#0F172A', fontWeight: '600', fontSize: 13 }}>{item.item_name} · {item.portion_amount === null ? 'Amount unavailable' : `${item.portion_amount} ${item.portion_unit ?? ''}`}</Text>
-          {isUnverifiedCustomFood(item) && <Text style={{ color: '#92400E', fontSize: 11, fontWeight: '700' }}>{item.custom_food_verification_status === 'rejected' ? 'Custom food · Rejected / not verified' : 'Custom food · Not verified'}</Text>}
-          <Text style={muted}>{available.length ? available.map((entry) => `${entry.short} ${showValue(recordedNumber(item[entry.key]), entry.unit)}`).join(' · ') : 'Nutrient estimates unavailable'}</Text>
+          {item.food_id?.startsWith('custom_') && item.custom_food_verification_status && <Text style={{ color: item.custom_food_verification_status === 'verified' ? '#047857' : item.custom_food_verification_status === 'rejected' ? '#B91C1C' : '#92400E', fontSize: 11, fontWeight: '700' }}>Custom food · {item.custom_food_verification_status === 'verified' ? 'Verified' : item.custom_food_verification_status === 'rejected' ? 'Rejected' : 'Not verified'}</Text>}
+          <Text style={muted}>{item.custom_food_verification_status === 'rejected' ? 'Excluded from nutrient totals after doctor rejection' : available.length ? available.map((entry) => `${entry.short} ${showValue(recordedNumber(item[entry.key]), entry.unit)}`).join(' · ') : 'Nutrient estimates unavailable'}</Text>
         </View>;
       })}
     </View>)}</View>;
@@ -174,7 +174,9 @@ export function WellnessDiaryDashboard({ mode, onModeChange, initialDate }: { mo
 
   if (mode === 'daily') {
     const day = aggregateDiaryDay(selectedDate, meals ?? []);
-    const unverifiedCount = day.meals.flatMap((meal) => meal.food_diary_items).filter(isUnverifiedCustomFood).length;
+    const dayItems = day.meals.flatMap((meal) => meal.food_diary_items);
+    const unverifiedCount = dayItems.filter(isUnverifiedCustomFood).length;
+    const rejectedCount = dayItems.filter(isRejectedCustomFood).length;
     const contributionMeals = mealOrder.map((type) => ({ type, meals: day.meals.filter((meal) => meal.meal_type === type) }));
     const contributions = contributionMeals.map(({ type, meals: group }) => ({ type, total: aggregateDiaryDay(selectedDate, group).nutrients[selectedNutrient] }));
     const maximum = Math.max(1, ...contributions.map((entry) => entry.total.value ?? 0));
@@ -184,6 +186,7 @@ export function WellnessDiaryDashboard({ mode, onModeChange, initialDate }: { mo
           {[['Meals logged', day.mealCount], ['Foods recorded', day.foodCount]].map(([label, value]) => <View key={label} style={{ flex: 1, backgroundColor: '#ECFDF5', padding: 10, borderRadius: 12 }}><Text style={{ color: '#047857', fontSize: 20, fontWeight: '700' }}>{value}</Text><Text style={muted}>{label}</Text></View>)}
         </View><Text style={muted}>Nutrients are estimates from recorded foods only. Missing values can make totals partial. Calorie totals are unavailable.</Text>
           {unverifiedCount > 0 && <View accessibilityRole="alert" style={{ padding: 10, backgroundColor: '#FFFBEB', borderRadius: 10 }}><Text style={{ color: '#92400E', fontSize: 12, lineHeight: 18, fontWeight: '600' }}>{unverifiedCount} custom food {unverifiedCount === 1 ? 'entry has' : 'entries have'} nutrition data that has not been verified by a doctor. These values are included in recorded totals and the report, and should be treated as unconfirmed.</Text></View>}
+          {rejectedCount > 0 && <View accessibilityRole="alert" style={{ padding: 10, backgroundColor: '#FEF2F2', borderRadius: 10 }}><Text style={{ color: '#991B1B', fontSize: 12, lineHeight: 18, fontWeight: '600' }}>{rejectedCount} custom food {rejectedCount === 1 ? 'entry was' : 'entries were'} rejected by your doctor. It is excluded from nutrient totals and cannot be added to new meals.</Text></View>}
           {reportButton('Download daily report (CSV)', () => void exportReport([day], 'daily'))}{Boolean(exportError) && <Text accessibilityRole="alert" style={{ color: '#B91C1C', fontSize: 12 }}>{exportError}</Text>}
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{DIARY_NUTRIENTS.map((entry) => <View key={entry.key} style={{ flexBasis: '47%', flexGrow: 1, minWidth: 128, backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#E2E8F0', padding: 11, gap: 4 }}><View style={{ width: 20, height: 4, backgroundColor: entry.color, borderRadius: 3 }} /><Text style={muted}>{entry.label}</Text><Text style={{ color: '#0F172A', fontSize: 16, fontWeight: '700' }}>{showValue(day.nutrients[entry.key].value, entry.unit)}</Text>{day.nutrients[entry.key].partial && <Text style={muted}>Partial coverage</Text>}</View>)}</View>
@@ -203,12 +206,14 @@ export function WellnessDiaryDashboard({ mode, onModeChange, initialDate }: { mo
   const allMeals = days.flatMap((day) => day.meals);
   const allItems = allMeals.flatMap((meal) => meal.food_diary_items);
   const unverifiedCount = allItems.filter(isUnverifiedCustomFood).length;
+  const rejectedCount = allItems.filter(isRejectedCustomFood).length;
   const partial = DIARY_NUTRIENTS.some((entry) => days.some((day) => day.nutrients[entry.key].partial));
   const latest = allMeals.map((meal) => meal.created_at).filter(Boolean).sort().at(-1) ?? null;
   return frame(<>{navigation}
     {allMeals.length === 0 && <View style={card}><Text style={title}>No meals recorded for this week</Text><Text style={muted}>No Food Diary records are available for these dates. This does not describe all food eaten.</Text></View>}
     <View style={card}><Text style={title}>Weekly recorded overview</Text><Text style={muted}>{loggedDays} of 7 days have meal records · {allMeals.length} meals · {allItems.length} foods</Text><Text style={muted}>Last available update: {formatDateTime(latest)}. Days without records are unknown, not measured zero intake.{partial ? ' Some nutrient totals have partial coverage.' : ''}</Text>
       {unverifiedCount > 0 && <View accessibilityRole="alert" style={{ padding: 10, backgroundColor: '#FFFBEB', borderRadius: 10 }}><Text style={{ color: '#92400E', fontSize: 12, lineHeight: 18, fontWeight: '600' }}>{unverifiedCount} custom food {unverifiedCount === 1 ? 'entry has' : 'entries have'} nutrition data that has not been verified by a doctor. It is included in this report and should be treated as unconfirmed.</Text></View>}
+      {rejectedCount > 0 && <View accessibilityRole="alert" style={{ padding: 10, backgroundColor: '#FEF2F2', borderRadius: 10 }}><Text style={{ color: '#991B1B', fontSize: 12, lineHeight: 18, fontWeight: '600' }}>{rejectedCount} custom food {rejectedCount === 1 ? 'entry was' : 'entries were'} rejected by your doctor. It is excluded from nutrient totals and cannot be added to new meals.</Text></View>}
       {reportButton('Download weekly report (CSV)', () => void exportReport(days, 'weekly'))}{Boolean(exportError) && <Text accessibilityRole="alert" style={{ color: '#B91C1C', fontSize: 12 }}>{exportError}</Text>}
     </View>
     <View style={card}><Text style={title}>Seven-day nutrient trend</Text><Text style={muted}>Select a nutrient, then tap a day for its records.</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>{DIARY_NUTRIENTS.slice(0, 4).map((entry) => <TouchableOpacity key={entry.key} accessibilityRole="button" onPress={() => setSelectedNutrient(entry.key)} style={{ minHeight: 40, paddingHorizontal: 9, borderRadius: 10, justifyContent: 'center', backgroundColor: weeklyMacro === entry.key ? '#CCFBF1' : '#F1F5F9' }}><Text style={{ color: '#047857', fontSize: 12 }}>{entry.short}</Text></TouchableOpacity>)}</View><WeekChart days={days} selected={selected.date} onSelect={setSelectedWeekDay} nutrientKey={weeklyMacro} /><Text style={muted}>— No records · ? nutrient unavailable · values in grams. Partial days are identified below.</Text></View>

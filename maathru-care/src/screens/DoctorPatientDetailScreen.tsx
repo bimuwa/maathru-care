@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import { api, DailySymptomLog, RiskPredictionResult, DoctorAlert } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { DoctorCustomFoodReview } from '../components/ui/DoctorCustomFoodReview';
 
 // ─── PrescriptionWriter inline component ─────────────────────────────────────
 const FREQ_OPTIONS = ['Once daily', 'Twice daily', 'Three times daily', 'With meals', 'At bedtime', 'As needed'];
@@ -439,6 +440,7 @@ export default function DoctorPatientDetailScreen() {
           )}
 
           {/* ── Doctor Notes (WIRED to backend) ── */}
+          <DoctorCustomFoodReview doctorId={user?.id ?? ''} patientId={patientId} />
           <View className="bg-white rounded-[20px] p-5 mb-8 shadow-sm shadow-slate-100">
             <View className="flex-row items-center mb-3">
               <FileText color="#15803D" size={18} />

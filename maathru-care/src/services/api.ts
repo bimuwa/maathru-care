@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
+import type { UserCustomFood, CustomFoodVerificationStatus } from '../types/customFood';
+import type { SavedDiaryMeal } from './foodDiaryService';
 
 const BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL || Platform.select({
   // The web app runs on the same computer as the local API. Native devices still
@@ -165,6 +167,12 @@ export interface PatientProfile {
   currentRiskProbability?: number;
   hasActiveAlert?: boolean;
   nextAppointment?: string;
+}
+
+export interface PatientCustomFoodsResponse {
+  success: boolean;
+  patient: { id: string; fullName: string };
+  foods: UserCustomFood[];
 }
 
 // ─── Chat Types ──────────────────────────────────────────────────────────────
@@ -413,6 +421,40 @@ class ApiService {
   // ─── Doctor Roster & Summary ─────────────────────────────────────────────
   public async getDoctorPatients(doctorId: string): Promise<{ success: boolean; patients: PatientProfile[] }> {
     return this.request(`/doctor/${doctorId}/patients`);
+  }
+
+  public async getPatientCustomFoods(doctorId: string, patientId: string): Promise<PatientCustomFoodsResponse> {
+    return this.request(`/doctor/${encodeURIComponent(doctorId)}/patient/${encodeURIComponent(patientId)}/custom-foods`);
+  }
+
+  public async setPatientCustomFoodVerification(
+    doctorId: string, patientId: string, foodId: string, verificationStatus: Extract<CustomFoodVerificationStatus, 'verified' | 'rejected'>,
+  ): Promise<{ success: boolean; food: Pick<UserCustomFood, 'id' | 'food_id' | 'display_name' | 'verification_status' | 'updated_at'> }> {
+    return this.request(`/doctor/${encodeURIComponent(doctorId)}/patient/${encodeURIComponent(patientId)}/custom-foods/${encodeURIComponent(foodId)}`, {
+      method: 'PATCH', body: JSON.stringify({ verificationStatus }),
+    });
+  }
+
+  public async getPatientFoodDiary(
+    doctorId: string, patientId: string, startDate: string, endDate: string,
+  ): Promise<{ success: boolean; patient: { id: string; fullName: string }; meals: SavedDiaryMeal[] }> {
+    const query = new URLSearchParams({ startDate, endDate });
+    return this.request(`/doctor/${encodeURIComponent(doctorId)}/patient/${encodeURIComponent(patientId)}/food-diary?${query.toString()}`);
+  }
+
+  public async getDevDoctorMothers(): Promise<{ success: boolean; users: Array<{ id: string; full_name: string; email: string; age: number | null; gestational_week: number | null; blood_group: string | null }> }> {
+    return this.request('/dev-doctor-review/users', { headers: { 'X-Dev-Doctor-Mode': 'local-preview' } });
+  }
+
+  public async getDevDoctorMotherData(patientId: string): Promise<{ success: boolean; patient: any; foods: UserCustomFood[]; meals: SavedDiaryMeal[]; warning?: string }> {
+    return this.request(`/dev-doctor-review/users/${encodeURIComponent(patientId)}`, { headers: { 'X-Dev-Doctor-Mode': 'local-preview' } });
+  }
+
+  public async setDevDoctorFoodStatus(patientId: string, foodId: string, verificationStatus: 'verified' | 'rejected') {
+    return this.request<{ success: boolean; food: Pick<UserCustomFood, 'id' | 'food_id' | 'display_name' | 'verification_status' | 'updated_at'> }>(
+      `/dev-doctor-review/users/${encodeURIComponent(patientId)}/custom-foods/${encodeURIComponent(foodId)}`,
+      { method: 'PATCH', headers: { 'X-Dev-Doctor-Mode': 'local-preview' }, body: JSON.stringify({ verificationStatus }) },
+    );
   }
 
   public async getPatientDetail(patientId: string): Promise<{ success: boolean; patient: PatientProfile }> {

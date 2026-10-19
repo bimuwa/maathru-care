@@ -19,11 +19,11 @@ import { supabase } from '../lib/supabase';
 
 type LoginRole = 'mother' | 'doctor';
 
-export default function LoginScreen() {
+export default function LoginScreen({ mockDoctorOnly = false }: { mockDoctorOnly?: boolean }) {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginMockDoctor } = useAuth();
 
-  const [activeRole, setActiveRole] = useState<LoginRole>('mother');
+  const [activeRole, setActiveRole] = useState<LoginRole>(mockDoctorOnly ? 'doctor' : 'mother');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,6 +52,15 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    if (mockDoctorOnly && activeRole === 'doctor') {
+      if (!__DEV__) { setFormError('Mock doctor login is available only in development builds.'); return; }
+      setIsLoading(true);
+      setFormError('');
+      try { loginMockDoctor(email); router.replace('/(doctor)/home'); }
+      catch (err: any) { setFormError(err?.message || 'Could not start the mock doctor session.'); }
+      finally { setIsLoading(false); }
+      return;
+    }
     if (!validate()) return;
     setIsLoading(true);
     setFormError('');

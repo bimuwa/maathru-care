@@ -16,7 +16,11 @@ export type DiaryDay = {
 };
 
 export function isUnverifiedCustomFood(item: SavedDiaryItem): boolean {
-  return Boolean(item.food_id?.startsWith('custom_') && item.custom_food_verification_status !== 'verified');
+  return Boolean(item.food_id?.startsWith('custom_') && (item.custom_food_verification_status === 'unverified' || item.custom_food_verification_status === null));
+}
+
+export function isRejectedCustomFood(item: SavedDiaryItem): boolean {
+  return Boolean(item.food_id?.startsWith('custom_') && item.custom_food_verification_status === 'rejected');
 }
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -33,7 +37,7 @@ export function diaryReportCsv(title: string, days: readonly DiaryDay[]): string
           return value === null ? null : `${short}: ${value} ${unit}`;
         }).filter(Boolean).join('; ');
         const status = item.food_id?.startsWith('custom_')
-          ? (item.custom_food_verification_status === 'verified' ? 'Verified' : item.custom_food_verification_status === 'rejected' ? 'Rejected / not verified' : 'Not verified')
+          ? (item.custom_food_verification_status === 'verified' ? 'Verified' : item.custom_food_verification_status === 'rejected' ? 'Rejected / excluded from totals' : 'Not verified')
           : 'Standard food';
         const snapshot = item.custom_food_nutrition_snapshot;
         const perServing = snapshot ? DIARY_NUTRIENTS.map(({ key, short, unit }) => {
@@ -46,7 +50,7 @@ export function diaryReportCsv(title: string, days: readonly DiaryDay[]): string
             return value === null ? [] : [`${key}: ${value}`];
           }),
         ).join('; ') : '';
-        rows.push([day.date, meal.meal_type, item.item_name, item.portion_amount === null ? 'Amount unavailable' : `${item.portion_amount} ${item.portion_unit ?? ''}`.trim(), values || 'Nutrient estimates unavailable', status, perServing]);
+        rows.push([day.date, meal.meal_type, item.item_name, item.portion_amount === null ? 'Amount unavailable' : `${item.portion_amount} ${item.portion_unit ?? ''}`.trim(), isRejectedCustomFood(item) ? 'Excluded from totals after doctor rejection' : values || 'Nutrient estimates unavailable', status, perServing]);
       }
     }
   }
@@ -84,11 +88,12 @@ export function recordedNumber(value: unknown): number | null {
 export function nutrientTotal(items: readonly SavedDiaryItem[], key: DiaryNutrientKey): RecordedTotal {
   let sum = 0;
   let knownItems = 0;
-  for (const item of items) {
+  const eligibleItems = items.filter((item) => !(item.food_id?.startsWith('custom_') && item.custom_food_verification_status === 'rejected'));
+  for (const item of eligibleItems) {
     const value = recordedNumber(item[key]);
     if (value !== null) { sum += value; knownItems++; }
   }
-  return { value: knownItems ? sum : null, knownItems, itemCount: items.length, partial: knownItems < items.length };
+  return { value: knownItems ? sum : null, knownItems, itemCount: eligibleItems.length, partial: knownItems < eligibleItems.length };
 }
 export function aggregateDiaryDay(date: string, allMeals: readonly SavedDiaryMeal[]): DiaryDay {
   const meals = allMeals.filter((meal) => meal.logged_date === date);

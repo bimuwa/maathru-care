@@ -174,6 +174,25 @@ export const foodDiaryService = {
       meals.push(...((data ?? []) as SavedDiaryMeal[]));
       if (!data || data.length < pageSize) break;
     }
-    return meals;
+    const customFoodIds = [...new Set(meals.flatMap((meal) => meal.food_diary_items)
+      .map((item) => item.food_id).filter((foodId): foodId is string => Boolean(foodId?.startsWith('custom_'))))];
+    if (customFoodIds.length === 0) return meals;
+
+    // Resolve the current review state so a later doctor decision also affects older diary entries.
+    const { data: currentFoods, error: statusError } = await foodDiarySupabase.from('user_custom_foods')
+      .select('food_id, verification_status')
+      .eq('owner_id', session.user.id)
+      .in('food_id', customFoodIds);
+    if (statusError) throw new Error(statusError.message || 'Could not refresh custom-food review status.');
+    const statusByFoodId = new Map((currentFoods ?? []).map((food: any) => [food.food_id, food.verification_status as CustomFoodVerificationStatus]));
+    return meals.map((meal) => ({
+      ...meal,
+      food_diary_items: meal.food_diary_items.map((item) => ({
+        ...item,
+        custom_food_verification_status: item.food_id && statusByFoodId.has(item.food_id)
+          ? statusByFoodId.get(item.food_id)!
+          : item.custom_food_verification_status,
+      })),
+    }));
   },
 };

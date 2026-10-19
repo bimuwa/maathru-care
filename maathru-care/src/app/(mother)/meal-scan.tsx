@@ -242,7 +242,7 @@ export default function DetectScreen() {
           : null);
         setSearchResults(rankCombinedFoodResults([
           ...catalogResult.value.map((food) => ({ ...food, resultSource: 'catalog' as const })),
-          ...customFoods.map((food) => ({ ...food, resultSource: 'custom' as const, customRecord: food })),
+          ...customFoods.filter((food) => food.verification_status !== 'rejected').map((food) => ({ ...food, resultSource: 'custom' as const, customRecord: food })),
         ], searchQuery));
       } catch (error) {
         if (!active) return;
@@ -294,6 +294,10 @@ export default function DetectScreen() {
   };
 
   const handleSelectCustomFood = (food: UserCustomFood) => {
+    if (food.verification_status === 'rejected') {
+      Alert.alert('Food label rejected', 'Your doctor rejected this food label. You cannot add it to a new meal. Edit its details and submit it for review again first.');
+      return;
+    }
     const id = `custom-${food.id}`;
     const record = mapFoodNutritionRecord({
       food_id: food.food_id,
