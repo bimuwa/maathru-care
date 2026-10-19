@@ -1,10 +1,30 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-const BACKEND_BASE_URL = Platform.select({
-  android: 'http://192.168.1.11:5000/api/v1',
-  ios: 'http://192.168.1.11:5000/api/v1',
-  default: 'http://localhost:5000/api/v1',
-});
+function getBackendBaseUrl(): string {
+  // Automatically extract laptop IP from Expo development server host (e.g. 10.175.143.59:8081)
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest?.debuggerHost ||
+    (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
+
+  if (hostUri) {
+    const hostIp = hostUri.split(':')[0];
+    if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
+      return `http://${hostIp}:5000/api/v1`;
+    }
+  }
+
+  return Platform.select({
+    android: 'http://10.175.143.59:5000/api/v1',
+    ios: 'http://10.175.143.59:5000/api/v1',
+    default: 'http://localhost:5000/api/v1',
+  })!;
+}
+
+const BACKEND_BASE_URL = getBackendBaseUrl();
+console.log('[ApiService] Connecting to backend at:', BACKEND_BASE_URL);
+
 
 // ─── Auth Types ─────────────────────────────────────────────────────────────
 
