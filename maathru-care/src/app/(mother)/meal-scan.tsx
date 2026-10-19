@@ -337,6 +337,17 @@ export default function DetectScreen() {
     referenceVersions.current.clear();
   };
 
+  const leaveMealScanner = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    // The scanner can be opened directly by URL/deep link, where there may be
+    // no previous route in the navigation history.
+    router.replace('/(mother)/home');
+  };
+
   const handleBack = () => {
     if (mealItems.length > 0) {
       Alert.alert(
@@ -347,12 +358,12 @@ export default function DetectScreen() {
           {
             text: 'Leave',
             style: 'destructive',
-            onPress: () => router.back(),
+            onPress: leaveMealScanner,
           },
         ]
       );
     } else {
-      router.back();
+      leaveMealScanner();
     }
   };
 

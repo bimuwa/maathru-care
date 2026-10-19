@@ -22,6 +22,13 @@ const code = ts.transpileModule(source, { compilerOptions: {
 const transpiledExports = {};
 vm.runInNewContext(code, { exports: transpiledExports, URLSearchParams, require(name) {
   if (name === '@/services/nutritionApi') return { nutritionApi };
+  if (name === '@/services/nutrientCatalog') {
+    const nutrientSource = fs.readFileSync(path.join(root, 'src/services/nutrientCatalog.ts'), 'utf8');
+    const nutrientCode = ts.transpileModule(nutrientSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const nutrientExports = {};
+    vm.runInNewContext(nutrientCode, { exports: nutrientExports }, { filename: 'nutrientCatalog.ts' });
+    return nutrientExports;
+  }
   if (name === '@/types/customFood') return {};
   return require(name);
 } }, { filename });
@@ -60,6 +67,17 @@ test('list, search, edit and delete use the backend routes', async () => {
   await customFoodService.update(foodRecord.id, { display_name: 'Edited Curry' });
   assert.equal(requests.at(-1).route, `/foods/custom/${foodRecord.id}`);
   assert.equal(requests.at(-1).options.method, 'PATCH');
+  const nutrition = { protein_g: 3.2, sugar_g: 0, vitamin_c_mg: null };
+  response = { ...foodRecord, nutrition_values: nutrition };
+  await customFoodService.create({ display_name: 'Test meal', serving_unit: '1 bun', nutrition_values: nutrition });
+  assert.deepEqual(response.nutrition_values, nutrition);
+  assert.deepEqual(JSON.parse(requests.at(-1).options.body).nutrition_values, nutrition);
+  response = [{ ...foodRecord, nutrition_values: nutrition }];
+  assert.deepEqual((await customFoodService.list())[0].nutrition_values, nutrition);
+  await customFoodService.update(foodRecord.id, { display_name: 'Edited Curry', nutrition_values: nutrition });
+  assert.deepEqual(JSON.parse(requests.at(-1).options.body).nutrition_values, nutrition);
+  await assert.rejects(customFoodService.create({ display_name: 'Invalid', nutrition_values: { protein_g: -1 } }), /zero or greater/);
+  await assert.rejects(customFoodService.create({ display_name: 'Invalid', nutrition_values: { protein_g: Number.NaN } }), /valid number/);
   await customFoodService.remove(foodRecord.id);
   assert.equal(requests.at(-1).options.method, 'DELETE');
 });

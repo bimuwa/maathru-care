@@ -1,0 +1,44 @@
+[
+  {
+    "id": "mother-1788098588855",
+    "email": "hansika@gmail.com",
+    "password": "hansika123",
+    "role": "mother",
+    "fullName": "hansika",
+    "phone": "0712226655",
+    "age": 25,
+    "bloodGroup": "A+",
+    "gravida": 1,
+    "gestationalAgeWeeks": 33,
+    "assignedDoctorId": "",
+    "assignedDoctorName": "",
+    "approvalStatus": "pending"
+  },
+  {
+    "id": "doctor-1788098655730",
+    "email": "shafi@gmail.com",
+    "password": "shafi123",
+    "role": "doctor",
+    "fullName": "shafi",
+    "phone": "0711112244",
+    "medicalLicense": "1760123",
+    "specialty": "maternity and risk surgeon",
+    "hospital": "Colombo hospital",
+    "approvalStatus": "not_required"
+  },
+  {
+    "id": "mother-1788098752444",
+    "email": "sachi@gmail.com",
+    "password": "sachi123",
+    "role": "mother",
+    "fullName": "sachi",
+    "phone": "0716665599",
+    "age": 25,
+    "bloodGroup": "O+",
+    "gravida": 1,
+    "gestationalAgeWeeks": 29,
+    "assignedDoctorId": "doctor-1788098655730",
+    "assignedDoctorName": "shafi",
+    "approvalStatus": "approved"
+  }
+]
