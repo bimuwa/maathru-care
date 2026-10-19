@@ -45,6 +45,22 @@ function asNullableNumber(value: number | null | undefined) {
 }
 
 function serializeItem(item: MealItem) {
+  if (item.customFood && !item.portion) {
+    const foodId = item.nutritionRecord?.foodId || item.foodId;
+    if (!foodId.startsWith('custom_')) throw new Error('This custom food does not have a valid saved food ID.');
+    return {
+      food_id: foodId,
+      item_name: item.nutritionRecord?.displayName || item.name,
+      portion_amount: null,
+      portion_unit: null,
+      reference_amount: null,
+      reference_unit: null,
+      reference_description: null,
+      portion_provenance: 'quantity_unknown',
+      carbs_g: null, sugar_g: null, fiber_g: null, fat_g: null, iron_mg: null, calcium_mg: null,
+      calculation_version: NUTRITION_CALCULATION_VERSION,
+    };
+  }
   if (!item.portion || !Number.isFinite(item.portion.amount) || item.portion.amount <= 0) {
     throw new Error('Select a portion greater than zero before saving a food.');
   }
@@ -112,7 +128,7 @@ export const foodDiaryService = {
   },
 
   async saveMeal(requestId: string, date: string, mealType: string, items: MealItem[]): Promise<string> {
-    const selectedItems = items.filter((item) => item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0);
+    const selectedItems = items.filter((item) => (item.customFood && !item.portion) || (item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0));
     if (selectedItems.length === 0) throw new Error('Tap + or enter an amount before saving a meal.');
     const session = await this.getSession();
     if (!session?.user?.id) throw new Error('Sign in to your Food Diary account before saving.');

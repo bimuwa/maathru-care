@@ -170,36 +170,60 @@ export type Database = {
       }
       maternal_foods: {
         Row: {
+          id: number
           food_id: string
           display_name: string
+          english_name: string | null
+          scientific_name: string | null
+          category: string | null
+          serving_unit: string | null
+          ref_mask_area: number | null
           carbs_g: number | null
           sugar_g: number | null
           fiber_g: number | null
           fat_g: number | null
           iron_mg: number | null
           calcium_mg: number | null
+          gi_index: number | null
+          is_contraindicated: boolean | null
           created_at: string | null
         }
         Insert: {
+          id?: number
           food_id: string
           display_name: string
+          english_name?: string | null
+          scientific_name?: string | null
+          category?: string | null
+          serving_unit?: string | null
+          ref_mask_area?: number | null
           carbs_g?: number | null
           sugar_g?: number | null
           fiber_g?: number | null
           fat_g?: number | null
           iron_mg?: number | null
           calcium_mg?: number | null
+          gi_index?: number | null
+          is_contraindicated?: boolean | null
           created_at?: string | null
         }
         Update: {
+          id?: number
           food_id?: string
           display_name?: string
+          english_name?: string | null
+          scientific_name?: string | null
+          category?: string | null
+          serving_unit?: string | null
+          ref_mask_area?: number | null
           carbs_g?: number | null
           sugar_g?: number | null
           fiber_g?: number | null
           fat_g?: number | null
           iron_mg?: number | null
           calcium_mg?: number | null
+          gi_index?: number | null
+          is_contraindicated?: boolean | null
           created_at?: string | null
         }
       }

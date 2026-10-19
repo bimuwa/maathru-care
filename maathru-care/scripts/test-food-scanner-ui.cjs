@@ -118,7 +118,7 @@ test('one authenticated Save Meal action stays below the scroll content with saf
   assert.match(footers[0].parent.getText(source), /Food Diary account/);
   assert.match(source.text, /foodDiaryService\.saveMeal\(requestId, localDate, mealType, selectedItems\)/);
   assert.match(saveButtons[0].getText(source), /!hasSelectedPortion/);
-  assert.match(source.text, /const hasSelectedPortion = mealItems\.some\(\(item\) => item\.portion && Number\.isFinite\(item\.portion\.amount\) && item\.portion\.amount > 0\)/);
+  assert.match(source.text, /const hasSelectedPortion = mealItems\.some\(\(item\) => \(item\.customFood && !item\.portion\) \|\| \(item\.portion && Number\.isFinite\(item\.portion\.amount\) && item\.portion\.amount > 0\)\)/);
   assert.match(source.text, /FoodDiaryHistory/);
   assert.match(source.text, /KeyboardAvoidingView style=\{\{ flex: 1, minHeight: 0 \}\}/);
   assert.match(source.text, /contentContainerStyle=\{\{ paddingBottom: 32 \+ Math.max\(insets.bottom, 8\) \}\}/);

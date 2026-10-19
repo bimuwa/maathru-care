@@ -28,9 +28,12 @@ import { MealImagePreview } from '@/components/ui/MealImagePreview';
 import { MealSaveSuccessModal } from '@/components/ui/MealSaveSuccessModal';
 import { FoodDiaryAuthModal } from '@/components/ui/FoodDiaryAuthModal';
 import { FoodDiaryHistory } from '@/components/ui/FoodDiaryHistory';
+import { CustomFoodsModal } from '@/components/ui/CustomFoodsModal';
+import type { UserCustomFood } from '@/types/customFood';
 
 // API & Services
-import { supabase } from '@/lib/supabase';
+import { customFoodService } from '@/services/customFoodService';
+import { foodSearchService } from '@/services/foodSearch';
 import { analyzeMealImage } from '@/services/api/foodDetector';
 import { useAuth } from '@/context/AuthContext';
 import { foodDiaryService, newDiaryRequestId } from '@/services/foodDiaryService';
@@ -82,7 +85,7 @@ export default function DetectScreen() {
 
   // ── Meal session state ──────────────────────────────────────
   const [mealItems, setMealItems] = useState<MealItem[]>([]);
-  const hasSelectedPortion = mealItems.some((item) => item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0);
+  const hasSelectedPortion = mealItems.some((item) => (item.customFood && !item.portion) || (item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0));
   const previousPlateCount = useRef(0);
   useEffect(() => {
     if (mealItems.length > previousPlateCount.current) {
@@ -146,7 +149,7 @@ export default function DetectScreen() {
   }, [diarySession?.user?.id]);
 
   const handleSaveMeal = async () => {
-    const selectedItems = mealItems.filter((item) => item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0);
+    const selectedItems = mealItems.filter((item) => (item.customFood && !item.portion) || (item.portion && Number.isFinite(item.portion.amount) && item.portion.amount > 0));
     if (saveInFlight.current || isSavingMeal || selectedItems.length === 0) return;
     if (!diarySession?.user?.id) { setShowDiaryAuth(true); return; }
     if (!isDiaryReady) { Alert.alert('Diary setup incomplete', 'Food Diary saving is enabled after the database migration is applied and verified.'); return; }
@@ -178,7 +181,15 @@ export default function DetectScreen() {
       resetScanWorkspace();
       setShowSuccessModal(true);
     } catch (error) {
-      Alert.alert('Meal not saved', error instanceof Error ? error.message : 'Could not save this meal. Check your connection and try again.');
+      const message = error instanceof Error ? error.message : 'Could not save this meal. Check your connection and try again.';
+      const hasCustomFood = selectedItems.some((item) => item.customFood);
+      const customMigrationPending = hasCustomFood && /no longer available|user_custom_foods|schema cache|custom food/i.test(message);
+      Alert.alert(
+        customMigrationPending ? 'Custom food diary setup required' : 'Meal not saved',
+        customMigrationPending
+          ? 'The custom food diary migration has not been applied yet. Your meal draft is still here. Ask the project administrator to apply the reviewed migrations, then try again.'
+          : message,
+      );
     } finally {
       saveInFlight.current = false;
       setIsSavingMeal(false);
@@ -195,24 +206,44 @@ export default function DetectScreen() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [customSearchWarning, setCustomSearchWarning] = useState<string | null>(null);
+  const [showCustomFoods, setShowCustomFoods] = useState(false);
+  const [showVoiceUnavailable, setShowVoiceUnavailable] = useState(false);
 
   // Ignore stale responses when the query changes or the correction modal closes.
   useEffect(() => {
     setSearchError(null);
-    if (!isSearchModalVisible || searchQuery.trim().length < 2) {
+    if (!isSearchModalVisible || searchQuery.trim().length < 1) {
       setSearchResults([]);
       setIsSearching(false);
+      setCustomSearchWarning(null);
       return;
     }
     let active = true;
     setIsSearching(true);
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.from('maternal_foods').select('*')
-          .ilike('display_name', `%${searchQuery.trim()}%`).limit(20);
+        const [catalogResult, customResult] = await Promise.allSettled([
+          foodSearchService.searchMaternalFoods(searchQuery),
+          customFoodService.search(searchQuery),
+        ]);
         if (!active) return;
-        if (error) throw error;
-        setSearchResults(data ?? []);
+        if (catalogResult.status === 'rejected') throw catalogResult.reason;
+        const customFoods: UserCustomFood[] = customResult.status === 'fulfilled' ? customResult.value : [];
+        const customSearchFailed = customResult.status === 'rejected';
+        const customErrorMessage = customSearchFailed && customResult.reason instanceof Error
+          ? customResult.reason.message
+          : '';
+        const customTableMissing = /not set up yet|migration must be applied/i.test(customErrorMessage);
+        setCustomSearchWarning(customSearchFailed
+          ? customTableMissing
+            ? 'My Foods is not set up for this app yet. Built-in foods are available; an administrator needs to apply the custom food database migration.'
+            : 'Saved custom foods could not be loaded. The built-in food database is still available.'
+          : null);
+        setSearchResults([
+          ...catalogResult.value.map((food) => ({ ...food, resultSource: 'catalog' })),
+          ...customFoods.map((food) => ({ ...food, resultSource: 'custom', customRecord: food })),
+        ]);
       } catch (error) {
         if (!active) return;
         console.error('Food correction search failed:', error);
@@ -221,11 +252,18 @@ export default function DetectScreen() {
       } finally {
         if (active) setIsSearching(false);
       }
-    }, 500);
+    }, 250);
     return () => { active = false; clearTimeout(delayDebounceFn); };
   }, [searchQuery, isSearchModalVisible]);
 
   const handleSelectManualFood = (food: any) => {
+    if (food.resultSource === 'custom' && food.customRecord) {
+      handleSelectCustomFood(food.customRecord as UserCustomFood);
+      setIsSearchModalVisible(false);
+      setSearchQuery('');
+      setSearchResults([]);
+      return;
+    }
     const record = mapFoodNutritionRecord(food);
     const id = correctionCandidateId ?? `${food.food_id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     referenceVersions.current.set(id, (referenceVersions.current.get(id) ?? 0) + 1);
@@ -253,6 +291,23 @@ export default function DetectScreen() {
     setSearchQuery('');
     setSearchResults([]);
 
+  };
+
+  const handleSelectCustomFood = (food: UserCustomFood) => {
+    const id = `custom-${food.id}`;
+    const record = mapFoodNutritionRecord({
+      food_id: food.food_id,
+      display_name: food.display_name,
+      serving_unit: null,
+      carbs_g: null, sugar_g: null, fiber_g: null, fat_g: null, iron_mg: null, calcium_mg: null,
+    });
+    const item: MealItem = {
+      id, foodId: food.food_id, name: food.display_name, confidence: null,
+      nutritionRecord: record, portion: null, calculatedNutrients: null,
+      timestamp: Date.now(), referenceStatus: 'loaded', rawDetections: [], customFood: true,
+    };
+    setMealItems((previous) => [...previous, item]);
+    setShowCustomFoods(false);
   };
 
   // Check native camera/gallery permissions with visible failure handling.
@@ -460,6 +515,14 @@ export default function DetectScreen() {
             onSearch={() => setIsSearchModalVisible(true)}
             hasItems={mealItems.length > 0}
           />
+          <View style={{ paddingHorizontal: 16, gap: 8, marginTop: 8 }}>
+            <TouchableOpacity accessibilityRole="button" onPress={() => setShowCustomFoods(true)} style={{ minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#FFFFFF', justifyContent: 'center', paddingHorizontal: 14 }}>
+              <Text style={{ color: '#047857', fontWeight: '700' }}>My Foods · Add Custom Food</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" onPress={() => setShowVoiceUnavailable(true)} style={{ minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF', justifyContent: 'center', paddingHorizontal: 14 }}>
+              <Text style={{ color: '#334155', fontWeight: '700' }}>Analyze by Voice</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
@@ -832,6 +895,7 @@ export default function DetectScreen() {
           </View>
 
           {/* Results */}
+          {!!customSearchWarning && <Text accessibilityRole="alert" style={{ color: '#92400E', paddingHorizontal: 18, paddingTop: 8, lineHeight: 20 }}>{customSearchWarning}</Text>}
           {isSearching ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
               <ActivityIndicator size="large" color="#059669" />
@@ -868,15 +932,18 @@ export default function DetectScreen() {
                     <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 4 }}>
                       {item.display_name}
                     </Text>
-                    <Text style={{ fontSize: 13, color: '#64748B' }}>
-                      {item.carbs_g}g Carbs • {item.sugar_g}g Sugar
+                    <Text style={{ fontSize: 12, color: item.resultSource === 'custom' ? '#92400E' : '#047857', fontWeight: '600' }}>
+                      {item.resultSource === 'custom' ? 'My Food · Not doctor verified' : 'Food Database'}
                     </Text>
+                    {item.resultSource !== 'custom' && <Text style={{ fontSize: 13, color: '#64748B' }}>
+                      {item.carbs_g}g Carbs • {item.sugar_g}g Sugar
+                    </Text>}
                   </View>
                   <ChevronRight size={20} color="#CBD5E1" />
                 </TouchableOpacity>
               )}
             />
-          ) : searchQuery.trim().length > 1 ? (
+          ) : searchQuery.trim().length > 0 ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
               <Text style={{ fontSize: 40, marginBottom: 12 }}>🔍</Text>
               <Text style={{ fontSize: 18, fontWeight: '700', color: '#1E293B', textAlign: 'center', marginBottom: 8 }}>
@@ -885,6 +952,9 @@ export default function DetectScreen() {
               <Text style={{ fontSize: 15, color: '#64748B', textAlign: 'center' }}>
                 We couldn't find any foods matching "{searchQuery}". Try a different term.
               </Text>
+              <TouchableOpacity accessibilityRole="button" onPress={() => { setIsSearchModalVisible(false); setShowCustomFoods(true); }} style={{ minHeight: 48, marginTop: 16, borderRadius: 12, backgroundColor: '#047857', justifyContent: 'center', paddingHorizontal: 18 }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Create a new food label</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
@@ -896,6 +966,17 @@ export default function DetectScreen() {
           )}
         </KeyboardAvoidingView>
         </SafeAreaView>
+      </Modal>
+
+      <CustomFoodsModal visible={showCustomFoods} onClose={() => setShowCustomFoods(false)} onSelect={handleSelectCustomFood} />
+      <Modal visible={showVoiceUnavailable} transparent animationType="fade" onRequestClose={() => setShowVoiceUnavailable(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.35)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 8 }}>Voice analysis is not configured yet</Text>
+            <Text style={{ color: '#475569', lineHeight: 22 }}>A secure authenticated speech service and its Google Speech-to-Text and Gemini credentials are not available in this app setup. You can still search for foods manually.</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => setShowVoiceUnavailable(false)} style={{ minHeight: 46, marginTop: 14, backgroundColor: '#047857', borderRadius: 11, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Close</Text></TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
     </View>

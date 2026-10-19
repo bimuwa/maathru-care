@@ -24,6 +24,7 @@ export interface MealItem {
   rawDetections?: RawFoodDetection[];
   scanDetections?: RawFoodDetection[];
   referenceStatus?: 'loading' | 'loaded' | 'unmapped' | 'error';
+  customFood?: boolean;
 
   timestamp: number;
 }

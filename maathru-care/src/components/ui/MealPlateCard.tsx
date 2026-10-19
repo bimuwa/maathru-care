@@ -36,6 +36,7 @@ export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity,
             <View style={styles.description}>
               <Text style={styles.name}>{name}</Text>
               <Text style={styles.quantityStatus}>{QUANTITY_LABELS[status]}</Text>
+              {item.customFood && <Text style={styles.unavailable}>My Food · Not doctor verified · Nutrition data unavailable</Text>}
             </View>
             {item.confidence !== null && <View style={styles.aiBadge} accessibilityLabel="Food identified by AI">
               <Sparkles size={12} color="#047857" /><Text style={styles.aiBadgeText}>AI match</Text>

@@ -113,6 +113,23 @@ test('unselected foods are excluded from the saved meal', async () => {
   assert.equal(rpcCalls.length, before);
 });
 
+test('custom food with unknown quantity saves only its stable ID and null nutrient snapshots', async () => {
+  const customFoodId = 'custom_123e4567-e89b-12d3-a456-426614174000';
+  const custom = {
+    id: 'custom-row', foodId: customFoodId, name: 'Homemade Vegetable Mix', confidence: null,
+    nutritionRecord: calculator.mapFoodNutritionRecord({ food_id: customFoodId, display_name: 'Homemade Vegetable Mix', serving_unit: null,
+      carbs_g: null, sugar_g: null, fiber_g: null, fat_g: null, iron_mg: null, calcium_mg: null }),
+    portion: null, calculatedNutrients: null, timestamp: 1, customFood: true,
+  };
+  await foodDiaryService.saveMeal('custom-label-save', '2026-10-15', 'Dinner', [custom]);
+  const item = rpcCalls.at(-1)[1].p_items[0];
+  assert.equal(item.food_id, customFoodId);
+  assert.equal(item.portion_provenance, 'quantity_unknown');
+  assert.equal(item.portion_amount, null);
+  assert.equal(item.portion_unit, null);
+  for (const key of ['carbs_g', 'sugar_g', 'fiber_g', 'fat_g', 'iron_mg', 'calcium_mg']) assert.equal(item[key], null);
+});
+
 test('unmapped food is rejected before an RPC and no synthetic ID is invented', async () => {
   const before = rpcCalls.length;
   await assert.rejects(foodDiaryService.saveMeal('key-unmapped', '2026-10-15', 'Lunch', [{ ...roll(1), nutritionRecord: null }]), /no exact food catalog match/);

@@ -112,6 +112,8 @@ export default function MotherTabLayout() {
       <Tabs.Screen name="risk-assessment" options={{ href: null }} />
       <Tabs.Screen name="community" options={{ href: null }} />
       <Tabs.Screen name="nutrition" options={{ href: null }} />
+      <Tabs.Screen name="recipe-generator" options={{ href: null }} />
+      <Tabs.Screen name="recipe-result" options={{ href: null }} />
     </Tabs>
   );
 }

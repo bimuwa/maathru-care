@@ -6,7 +6,7 @@ import {
 import { useRouter } from 'expo-router';
 import {
   Brain, Activity, Bell, ChevronRight, Heart, AlertTriangle,
-  TrendingUp, HeartPulse, Pill, ShieldAlert, Calendar, Clock,
+  TrendingUp, HeartPulse, Pill, ShieldAlert, Calendar, Clock, ChefHat,
   CheckCircle, Stethoscope, ScanLine, User
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
@@ -358,6 +358,26 @@ export default function MotherHomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/(mother)/recipe-generator')}
+          activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityLabel="Smart Recipe Generator. Find meal ideas using ingredients you already have. Choose ingredients."
+          className="bg-white rounded-[20px] p-4 mb-5 border border-emerald-100 flex-row items-center"
+        >
+          <View className="w-12 h-12 rounded-[15px] bg-emerald-50 items-center justify-center mr-3">
+            <ChefHat color="#15803D" size={24} />
+          </View>
+          <View className="flex-1 min-w-0">
+            <Text className="text-slate-800 font-bold text-[15px]">Smart Recipe Generator</Text>
+            <Text className="text-slate-500 text-xs mt-1 leading-4">Find meal ideas using ingredients you already have.</Text>
+          </View>
+          <View className="flex-row items-center ml-2 rounded-full bg-emerald-50 px-3 py-2">
+            <Text className="text-emerald-700 font-semibold text-[11px]">Choose Ingredients</Text>
+            <ChevronRight color="#15803D" size={15} />
+          </View>
+        </TouchableOpacity>
 
         {/* ── Assigned Doctor with Availability Status ────────────────────────── */}
         {user?.assignedDoctorName && (

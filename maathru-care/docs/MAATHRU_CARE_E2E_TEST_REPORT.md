@@ -89,6 +89,24 @@ The initial check reported five failing source locations (six compiler diagnosti
 - No credentials or health data were added to this report. No shared records were read, written, or deleted.
 - No live account-switching, expired-session, registration duplication, or cross-user access test was performed.
 
+### Food Diary RLS and ownership verification
+
+| Check | Result | Evidence / limitation |
+|---|---|---|
+| Client read query uses the current Auth session | **PASS — source review** | `src/services/foodDiaryService.ts:135-153` requires `getSession()`, returns no rows without a user, and adds `.eq('owner_id', session.user.id)` before the date range. |
+| Client save uses authenticated RPC without a caller-supplied owner ID | **PASS — source review** | `src/services/foodDiaryService.ts:114-128` checks the session and sends only idempotency key, date, meal type, and items to `save_food_diary_meal`. |
+| Intended table RLS design | **PASS — migration review only** | `supabase/migrations/202610150002_food_diary_isolated.sql:54-78` enables RLS, defines authenticated owner-only meal SELECT and child-item SELECT through the owning meal, revokes table privileges, then grants SELECT to `authenticated`. This establishes migration intent, not deployed state. |
+| Intended RPC ownership enforcement | **PASS — migration review only** | `supabase/migrations/202610150002_food_diary_isolated.sql:80-91, 115-123, 158-162` defines `SECURITY DEFINER` with an empty `search_path`; `v_owner` is set to `auth.uid()`, no owner argument is accepted, inserted rows use `v_owner`, retries are looked up with that same owner, and EXECUTE is granted to authenticated while PUBLIC/anon are revoked. No RPC was invoked because even a test call is outside read-only verification. |
+| Existing local contract test | **PASS — mocked/static only** | `node --test scripts/test-food-diary.cjs`: 9 passed. It asserts the client owner filter, authenticated session requirement, RPC request key, and migration policy/function text. It does not connect to Supabase. |
+| Actual deployed RLS flags, policies, and grants on `food_diary_meals` / `food_diary_items` | **BLOCKED — not queried** | No Supabase CLI, database connection variable, or direct database tool is available in this environment. `.env` contains only the public Supabase URL and anon-key variable names; no credentials or values are included here. Existing read-only inspection queries are in `supabase/validation/202610150003_auth_rls_postflight.sql`, but they were not run. |
+| Account B direct authenticated query cannot read Account A meals or items | **BLOCKED — not tested** | Two authorized test-account credentials and an approved live project session are unavailable. UI filtering and mocked query assertions are not treated as proof of database isolation. |
+| Live RPC cannot create a meal for a different user | **NOT VERIFIED at runtime** | Source review confirms the function has no owner parameter and derives ownership from `auth.uid()`. A live invocation would write to the shared database and was intentionally not performed. |
+| Client source/config contains service-role credentials or references | **PASS — static scan** | Scanned frontend `src` and client configuration for service-role variable names and secret-key prefixes; no matches. The `.env` key names are public URL/anon-key only. No credential values were printed. |
+
+**Database-level isolation verdict: NOT VERIFIED.** The checked-in migration defines an appropriate owner-scoped design, but deployed policies and Account A/Account B behavior have not been read from or tested against the shared Supabase project. Do not report Food Diary user isolation as database-verified until an authorized read-only metadata inspection and direct two-account SELECT check pass.
+
+**Read-only follow-up when access is arranged:** use an authorized project session to run the existing postflight metadata SELECTs; use two disposable authorized accounts and each account’s regular authenticated anon-key session to select only row IDs. Read one meal ID as Account A, then filter both diary tables by that meal ID as Account B and confirm no rows are returned. Do not call the save RPC, use a service-role token, or expose either account’s credentials or diary contents during that check.
+
 ## 7. Research demo readiness
 
 **Ready with limitations.** Local workflow logic and regression suites are green, including scan request error handling, exact nutrition matching, portion calculations, idempotent save request shape, and daily/weekly snapshot aggregation. The app is **not verified end to end against live Supabase or a physical mobile device**, and the required full-reload persistence criterion remains open. Use an approved test account/database and complete the checklist below before presenting the feature as live-verified.
@@ -113,6 +131,7 @@ The initial check reported five failing source locations (six compiler diagnosti
 - **Lint:** blocked by unavailable ESLint setup/network.
 - **Backend pytest:** blocked because pytest is not installed.
 - **Live Supabase, interactive browser, and device workflows:** not tested.
+- **Food Diary database-level RLS isolation:** not verified; see the evidence table above.
 
 ## Files modified
 
