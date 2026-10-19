@@ -51,11 +51,12 @@ export function KickSessionProvider({ children }: { children: React.ReactNode })
       targetKicks: 10,
     });
 
-    // Start the global timer
+    // Calculate elapsed from sessionStart — accurate even after backgrounding
     timerRef.current = setInterval(() => {
       setSession(prev => {
-        if (!prev.isActive) return prev;
-        return { ...prev, elapsedSec: prev.elapsedSec + 1 };
+        if (!prev.isActive || !prev.sessionStart) return prev;
+        const elapsed = Math.floor((Date.now() - new Date(prev.sessionStart).getTime()) / 1000);
+        return { ...prev, elapsedSec: elapsed };
       });
     }, 1000);
   }, []);
