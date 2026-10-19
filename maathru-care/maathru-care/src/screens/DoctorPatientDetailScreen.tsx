@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import { api, DailySymptomLog, RiskPredictionResult, DoctorAlert } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import ClinicalDecisionSupport from '../components/ClinicalDecisionSupport';
 
 // ─── PrescriptionWriter inline component ─────────────────────────────────────
 const FREQ_OPTIONS = ['Once daily', 'Twice daily', 'Three times daily', 'With meals', 'At bedtime', 'As needed'];
@@ -36,7 +37,7 @@ const DUR_OPTIONS = ['7 days', '14 days', '30 days', '3 months', 'Ongoing'];
 
 interface MedEntry { name: string; dosage: string; frequency: string; duration: string; instructions: string; }
 
-function PrescriptionWriter({ patientId, doctorId }: { patientId: string; doctorId: string }) {
+function PrescriptionWriter({ patientId, doctorId, onSaved }: { patientId: string; doctorId: string; onSaved?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [meds, setMeds] = useState<MedEntry[]>([{ name: '', dosage: '', frequency: 'Once daily', duration: '30 days', instructions: '' }]);
   const [notes, setNotes] = useState('');
@@ -58,6 +59,7 @@ function PrescriptionWriter({ patientId, doctorId }: { patientId: string; doctor
       setMeds([{ name: '', dosage: '', frequency: 'Once daily', duration: '30 days', instructions: '' }]);
       setNotes('');
       setExpanded(false);
+      onSaved?.();
       Alert.alert('✅ Prescription Sent', 'The patient will see this prescription in their Medications tab immediately.');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save prescription.');
@@ -172,6 +174,9 @@ export default function DoctorPatientDetailScreen() {
   const [patientAge, setPatientAge] = useState<number | null>(null);
   const [patientGestWeeks, setPatientGestWeeks] = useState<number | null>(null);
   const [patientBloodGroup, setPatientBloodGroup] = useState<string>('—');
+  const [patientGravida, setPatientGravida] = useState<number | undefined>(undefined);
+  const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
+  const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [riskHistory, setRiskHistory] = useState<RiskPredictionResult[]>([]);
   const [symptoms, setSymptoms] = useState<DailySymptomLog[]>([]);
   const [alerts, setAlerts] = useState<DoctorAlert[]>([]);
@@ -193,16 +198,20 @@ export default function DoctorPatientDetailScreen() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [riskRes, symRes, alertsRes, patientsRes] = await Promise.all([
+      const [riskRes, symRes, alertsRes, patientsRes, vitalsRes, rxRes] = await Promise.all([
         api.getRiskHistory(patientId).catch(() => ({ success: false, history: [] })),
         api.getSymptomsHistory(patientId).catch(() => ({ success: false, history: [] })),
         api.getDoctorAlerts(user?.id ?? '').catch(() => ({ success: false, alerts: [] })),
         api.getDoctorPatients(user?.id ?? '').catch(() => ({ success: false, patients: [] })),
+        api.getVitalsHistory(patientId).catch(() => ({ success: false, history: [] })),
+        api.getPrescriptions(patientId).catch(() => ({ success: false, prescriptions: [] })),
       ]);
 
       if (riskRes.success) setRiskHistory(riskRes.history || []);
       if (symRes.success) setSymptoms(symRes.history || []);
       if (alertsRes.success) setAlerts((alertsRes.alerts || []).filter((a) => a.patientId === patientId));
+      if (vitalsRes && vitalsRes.success) setVitalsHistory(vitalsRes.history || []);
+      if (rxRes && rxRes.success) setPrescriptions(rxRes.prescriptions || []);
       if (patientsRes.success) {
         const found = patientsRes.patients?.find((p) => p.id === patientId);
         if (found) {
@@ -210,6 +219,7 @@ export default function DoctorPatientDetailScreen() {
           setPatientAge(found.age || null);
           setPatientGestWeeks(found.gestationalAgeWeeks || null);
           setPatientBloodGroup(found.bloodGroup || '—');
+          setPatientGravida((found as any).gravida ? Number((found as any).gravida) : undefined);
         }
       }
     } catch (err) {
@@ -372,6 +382,27 @@ export default function DoctorPatientDetailScreen() {
             </View>
           )}
 
+          {/* ── AI Clinical Decision Support (WHO Guidelines) ── */}
+          <ClinicalDecisionSupport
+            patient={{
+              age: patientAge ?? 0,
+              gestationalWeek: patientGestWeeks ?? 0,
+              bloodGroup: patientBloodGroup,
+              gravida: patientGravida,
+            }}
+            latestRisk={
+              currentRisk
+                ? {
+                    riskLevel: currentRisk.riskLevel,
+                    probability: currentRisk.highRiskProbability,
+                    inputData: currentRisk,
+                  }
+                : null
+            }
+            vitalsHistory={vitalsHistory}
+            prescriptions={prescriptions}
+          />
+
           {/* Risk Assessment History */}
           {riskHistory.length > 0 && (
             <View className="bg-white rounded-[20px] p-5 mb-4 shadow-sm shadow-slate-100">
@@ -481,7 +512,7 @@ export default function DoctorPatientDetailScreen() {
           </View>
 
           {/* ── Write Prescription ──────────────────────────────────────────── */}
-          <PrescriptionWriter patientId={patientId} doctorId={user?.id ?? ''} />
+          <PrescriptionWriter patientId={patientId} doctorId={user?.id ?? ''} onSaved={loadData} />
 
         </View>
       </ScrollView>

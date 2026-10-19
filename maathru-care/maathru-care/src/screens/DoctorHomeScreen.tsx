@@ -12,7 +12,7 @@ import {
 import { router } from 'expo-router';
 import {
   Users, Bell, Activity, ChevronRight, AlertTriangle,
-  CheckCircle, Clock, LogOut, ShieldAlert,
+  CheckCircle, Clock, LogOut, ShieldAlert, Calendar,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api, DoctorAlert } from '../services/api';
@@ -361,6 +361,12 @@ export default function DoctorHomeScreen() {
               style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}>
               <Bell size={24} color="#F97316" />
               <Text className="text-orange-500 font-semibold text-sm mt-2">Manage Alerts</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/doctor-appointments')} activeOpacity={0.8}
+              className="flex-1 bg-white rounded-[20px] p-4 items-center border border-purple-200"
+              style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}>
+              <Calendar size={24} color="#7C3AED" />
+              <Text className="text-purple-600 font-semibold text-sm mt-2">Appointments</Text>
             </TouchableOpacity>
           </View>
         </View>

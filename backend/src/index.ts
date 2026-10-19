@@ -12,6 +12,9 @@ import chatRoutes from './routes/chat.routes.js';
 import approvalRoutes from './routes/approval.routes.js';
 import vitalsRoutes from './routes/vitals.routes.js';
 import prescriptionsRoutes from './routes/prescriptions.routes.js';
+import kicksRoutes from './routes/kicks.routes.js';
+import appointmentsRoutes from './routes/appointments.routes.js';
+import reportsRoutes from './routes/reports.routes.js';
 
 dotenv.config();
 
@@ -50,6 +53,9 @@ app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/approval', approvalRoutes);
 app.use('/api/v1/vitals', vitalsRoutes);
 app.use('/api/v1/prescriptions', prescriptionsRoutes);
+app.use('/api/v1/kicks', kicksRoutes);
+app.use('/api/v1/appointments', appointmentsRoutes);
+app.use('/api/v1/reports', reportsRoutes);
 
 // Global Error Handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

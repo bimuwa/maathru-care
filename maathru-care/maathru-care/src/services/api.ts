@@ -415,6 +415,65 @@ class ApiService {
       body: JSON.stringify({ status, message }),
     });
   }
+
+  // ─── Kick Counter ──────────────────────────────────────────────────────────
+  public async saveKickSession(data: {
+    patientId: string; sessionStart: string; sessionEnd: string;
+    totalKicks: number; durationMinutes: number; targetKicks?: number;
+    completed: boolean; notes?: string;
+  }): Promise<{ success: boolean; session: any }> {
+    return this.request('/kicks/session', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  public async getKickHistory(patientId: string): Promise<{ success: boolean; sessions: any[] }> {
+    return this.request(`/kicks/history/${patientId}`);
+  }
+
+  public async getLatestKickSession(patientId: string): Promise<{ success: boolean; session: any }> {
+    return this.request(`/kicks/latest/${patientId}`);
+  }
+
+  // ─── Weight Tracking ──────────────────────────────────────────────────────
+  public async saveWeightLog(data: {
+    patientId: string; weightKg: number; gestationalWeek: number;
+    prePregnancyWeightKg?: number; heightCm?: number; bmiCategory?: string; notes?: string;
+  }): Promise<{ success: boolean; log: any }> {
+    return this.request('/reports/weight', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  public async getWeightHistory(patientId: string): Promise<{ success: boolean; logs: any[] }> {
+    return this.request(`/reports/weight/${patientId}`);
+  }
+
+  // ─── Appointments ──────────────────────────────────────────────────────────
+  public async createAppointment(data: {
+    patientId: string; doctorId: string; appointmentDate: string;
+    appointmentType: string; notes?: string; location?: string;
+    doctorName?: string; patientName?: string;
+  }): Promise<{ success: boolean; appointment: any }> {
+    return this.request('/appointments', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  public async getPatientAppointments(patientId: string): Promise<{ success: boolean; appointments: any[] }> {
+    return this.request(`/appointments/patient/${patientId}`);
+  }
+
+  public async getDoctorAppointments(doctorId: string): Promise<{ success: boolean; appointments: any[] }> {
+    return this.request(`/appointments/doctor/${doctorId}`);
+  }
+
+  public async updateAppointment(appointmentId: string, data: { status?: string; notes?: string }): Promise<{ success: boolean }> {
+    return this.request(`/appointments/${appointmentId}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  public async cancelAppointment(appointmentId: string): Promise<{ success: boolean }> {
+    return this.request(`/appointments/${appointmentId}`, { method: 'DELETE' });
+  }
+
+  // ─── Health Report ─────────────────────────────────────────────────────────
+  public async getHealthSummary(patientId: string): Promise<{ success: boolean; summary: any }> {
+    return this.request(`/reports/summary/${patientId}`);
+  }
 }
 
 export const api = new ApiService();
