@@ -155,6 +155,15 @@ export class FrameAccumulator {
     this._resetCount += 1;
   }
 
+  /** Zero the running sum and count at a turn boundary, so the next turn reads
+   *  only its own frames. Unlike `reset()` this is not a model-version event:
+   *  `resetCount` and `startedAt` are unchanged. */
+  clearTurn(): void {
+    this.sum = zeroSum();
+    this._count = 0;
+    this._modelVersion = null;
+  }
+
   /** The cumulative soft average — `sum[class] / count`, keyed by class name.
    *  `null` when no valid frame has contributed (zero-frame case → face
    *  evidence `null` → text-only, §3A.4 / Part E). */

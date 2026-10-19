@@ -111,6 +111,9 @@ export interface AnalyseMoodInput {
    *  fused from face evidence alone (the same shape as a degraded sentiment
    *  call). Absent = `true`. Language detection still runs. */
   textSensing?: boolean | undefined;
+  /** Chat turn: on success, keep the frames read as `lastTurn` and clear the
+   *  accumulator, so the next turn starts from its own frames. */
+  endTurn?: boolean | undefined;
 }
 
 const PLACEHOLDER_PROVENANCE_UNAVAILABLE = 'PLACEHOLDER FOR TESTING - NOT A MEASURED VALUE (fusion health check unavailable — provenance could not be confirmed live)';
@@ -138,8 +141,15 @@ export async function analyseMood(
     // Legacy / unauthenticated path only (pre-C7 suites).
     return deps.sessionStore.get(input.sessionId);
   })();
-  const turnFace = session
-    ? computeTurnFaceEvidence(session.accumulator.snapshot(), now, session.faceBaseline ?? null)
+  // A turn reads only the frames since the previous chat turn (owner decision, 2026-10-19).
+  // The follow-up /mood/analyse for the same text reads the frames that chat turn used.
+  let faceSnapshot = session?.accumulator.snapshot();
+  if (session && !input.endTurn && session.lastTurn?.text === input.text) {
+    faceSnapshot = session.lastTurn.snapshot;
+    session.lastTurn = null;
+  }
+  const turnFace = faceSnapshot
+    ? computeTurnFaceEvidence(faceSnapshot, now)
     : { evidence: null as FaceEvidence | null, frameCount: 0, sessionElapsedMs: 0 };
 
   // ── Part A step 2 — language detection, BEFORE any sentiment call ──
@@ -278,6 +288,11 @@ export async function analyseMood(
   if (deps.nodeEnv !== 'production') {
     const health = await deps.fusionClient.health(input.correlationId);
     body.parameters_provenance = health.ok ? health.data.parameters_provenance : PLACEHOLDER_PROVENANCE_UNAVAILABLE;
+  }
+
+  if (session && faceSnapshot && input.endTurn) {
+    session.lastTurn = { text: input.text, snapshot: faceSnapshot };
+    session.accumulator.clearTurn();
   }
 
   return { kind: 'ok', body };

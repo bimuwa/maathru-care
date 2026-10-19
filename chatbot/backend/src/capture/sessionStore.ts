@@ -43,8 +43,7 @@
  *
  * ⛔ This module never touches the 7→3 mapping, fusion, or a per-frame mood.
  */
-import { FrameAccumulator, type FerProbabilities } from './frameAccumulator.js';
-import { BaselineCollector, type FaceBaseline } from './faceBaseline.js';
+import { FrameAccumulator, type AccumulatorSnapshot, type FerProbabilities } from './frameAccumulator.js';
 
 export interface CameraSession {
   readonly sessionId: string;
@@ -53,17 +52,15 @@ export interface CameraSession {
   cameraActive: boolean;
   readonly accumulator: FrameAccumulator;
   /**
-   * Resting-face baseline (capture/faceBaseline.ts). 'loading' = the saved one is
-   * being fetched; 'collecting' = this user has none yet, so the first frames
-   * form it; 'ready' = in use; 'off' = unauthenticated legacy session.
+   * The frames the last chat turn was read from, kept after the accumulator is
+   * cleared so the client's follow-up /mood/analyse for the same text reads
+   * the same face (consumed once). Seven floats, never an image.
    */
-  baselinePhase: 'off' | 'loading' | 'collecting' | 'ready';
-  faceBaseline: FaceBaseline | null;
-  readonly baselineCollector: BaselineCollector;
+  lastTurn: { text: string; snapshot: AccumulatorSnapshot } | null;
 }
 
 export type RecordFrameResult =
-  | { ok: true; frameCount: number; reset: boolean; baselineCaptured?: FaceBaseline }
+  | { ok: true; frameCount: number; reset: boolean }
   | { ok: false; reason: 'no_consent' | 'camera_inactive' };
 
 /**
@@ -126,9 +123,7 @@ export class SessionStore {
       consentGrantedAt: now,
       cameraActive: true,
       accumulator: new FrameAccumulator(now),
-      baselinePhase: 'off',
-      faceBaseline: null,
-      baselineCollector: new BaselineCollector(),
+      lastTurn: null,
     };
     this.sessions.set(sessionId, session);
     return session;
@@ -145,10 +140,7 @@ export class SessionStore {
       consentGrantedAt: now,
       cameraActive: true,
       accumulator: new FrameAccumulator(now),
-      // The route loads the saved baseline and moves this to ready / collecting.
-      baselinePhase: 'loading',
-      faceBaseline: null,
-      baselineCollector: new BaselineCollector(),
+      lastTurn: null,
     };
     this.ownedSessions.set(SessionStore.ownerKey(sessionId, ownerId), session);
     let owners = this.ownersBySessionId.get(sessionId);
@@ -297,14 +289,6 @@ export class SessionStore {
     if (!session) return { ok: false, reason: 'no_consent' };
     if (!session.cameraActive) return { ok: false, reason: 'camera_inactive' };
     const { reset, count } = session.accumulator.addFrame(probabilities, modelVersion, now);
-    if (session.baselinePhase === 'collecting') {
-      const captured = session.baselineCollector.add(probabilities, modelVersion);
-      if (captured) {
-        session.faceBaseline = captured;
-        session.baselinePhase = 'ready';
-        return { ok: true, frameCount: count, reset, baselineCaptured: captured };
-      }
-    }
     return { ok: true, frameCount: count, reset };
   }
 

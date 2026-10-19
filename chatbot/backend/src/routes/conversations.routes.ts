@@ -218,7 +218,7 @@ export function createConversationsRouter(
       // the client sends one.
       const sessionId = sessionIdOf(req);
       const moodOutcome = await analyseMood(
-        { sessionId, ownerId: req.userId, text: content, textSensing },
+        { sessionId, ownerId: req.userId, text: content, textSensing, endTurn: true },
         getMoodDeps(),
       );
       if (moodOutcome.kind === 'upstream_unavailable') {

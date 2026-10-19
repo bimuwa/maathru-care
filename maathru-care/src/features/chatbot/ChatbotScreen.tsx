@@ -21,7 +21,7 @@ import { ChatDrawer } from "./components/ChatDrawer";
 import { MoodInfoModal } from "./components/MoodInfoModal";
 import { loadCameraPreference, saveCameraPreference } from "./cameraPreference";
 import { useAuth } from "../../context/AuthContext";
-import { grantCameraConsent, revokeCamera, setCameraActive, analyseMood } from "./api/sessionApi";
+import { grantCameraConsent, revokeCamera, setCameraActive, analyseMood, resetCameraFrames } from "./api/sessionApi";
 import { sessionId } from "./session";
 import { getChatbotAccessToken, subscribeChatbotToken } from "./chatbotAuth";
 import { showAlert } from "../../lib/alert";
@@ -67,6 +67,7 @@ function Chat() {
       s.setConsentSeen(true);
       if (pref.accepted) s.setConsentAccepted(true);
       if (pref.accepted && pref.on && !s.cameraEnabled) enableCamera();
+      else resetCameraFrames(); // camera already on: start this visit's face average afresh
     });
     return () => { cancelled = true; };
   }, [userId, authenticated]);
@@ -246,11 +247,13 @@ function Chat() {
   }
   function startNewChat() {
     newChat(); setError(false); setShowDrawer(false);
+    resetCameraFrames();
   }
   async function openPastChat(id: string) {
     try {
       await openConversation(id);
       setError(false); setShowDrawer(false);
+      resetCameraFrames();
     } catch {
       showAlert("Couldn't open that chat", "Please try again.");
     }

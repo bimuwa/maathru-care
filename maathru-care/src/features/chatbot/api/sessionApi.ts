@@ -36,6 +36,19 @@ export async function setCameraActive(active: boolean): Promise<void> {
   if (!res.ok) throw new Error(`camera state request failed: ${res.status}`);
 }
 
+// Start the face average afresh (new chat, past chat opened, chat screen opened).
+// Best-effort: a failure only means the next reply also reads earlier frames.
+export function resetCameraFrames(): void {
+  if (config.apiMode === "mock" || !useAppStore.getState().cameraEnabled) return;
+  let headers: Record<string, string>;
+  try {
+    headers = authHeaders();
+  } catch {
+    return;
+  }
+  fetch(`${config.apiBaseUrl}/api/v1/session/camera/reset`, { method: "POST", headers }).catch(() => {});
+}
+
 export async function revokeCamera(): Promise<void> {
   if (config.apiMode === "mock") return;
   const res = await fetch(`${config.apiBaseUrl}/api/v1/session/camera`, {
