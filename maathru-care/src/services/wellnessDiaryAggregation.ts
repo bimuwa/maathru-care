@@ -15,6 +15,44 @@ export type DiaryDay = {
   lastUpdated: string | null; nutrients: Record<DiaryNutrientKey, RecordedTotal>;
 };
 
+export function isUnverifiedCustomFood(item: SavedDiaryItem): boolean {
+  return Boolean(item.food_id?.startsWith('custom_') && item.custom_food_verification_status !== 'verified');
+}
+
+const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+export function diaryReportCsv(title: string, days: readonly DiaryDay[]): string {
+  const rows: unknown[][] = [[title], ['Date', 'Meal', 'Food', 'Amount', 'Nutrient values (consumed estimate)', 'Custom food status', 'Per-serving custom nutrition']];
+  for (const day of days) {
+    if (!day.meals.length) { rows.push([day.date, '', 'No meal records', '', '', '', '']); continue; }
+    for (const meal of day.meals) {
+      if (!meal.food_diary_items.length) { rows.push([day.date, meal.meal_type, 'No food items', '', '', '', '']); continue; }
+      for (const item of meal.food_diary_items) {
+        const values = DIARY_NUTRIENTS.map(({ key, short, unit }) => {
+          const value = recordedNumber(item[key]);
+          return value === null ? null : `${short}: ${value} ${unit}`;
+        }).filter(Boolean).join('; ');
+        const status = item.food_id?.startsWith('custom_')
+          ? (item.custom_food_verification_status === 'verified' ? 'Verified' : item.custom_food_verification_status === 'rejected' ? 'Rejected / not verified' : 'Not verified')
+          : 'Standard food';
+        const snapshot = item.custom_food_nutrition_snapshot;
+        const perServing = snapshot ? DIARY_NUTRIENTS.map(({ key, short, unit }) => {
+          const value = recordedNumber(snapshot[key]);
+          return value === null ? null : `${short}: ${value} ${unit}`;
+        }).filter(Boolean).concat(
+          snapshot.gi_index === null ? [] : [`GI: ${snapshot.gi_index}`],
+          Object.entries(snapshot.other_nutrients ?? {}).flatMap(([key, raw]) => {
+            const value = recordedNumber(raw);
+            return value === null ? [] : [`${key}: ${value}`];
+          }),
+        ).join('; ') : '';
+        rows.push([day.date, meal.meal_type, item.item_name, item.portion_amount === null ? 'Amount unavailable' : `${item.portion_amount} ${item.portion_unit ?? ''}`.trim(), values || 'Nutrient estimates unavailable', status, perServing]);
+      }
+    }
+  }
+  return `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+}
+
 export function localDateString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

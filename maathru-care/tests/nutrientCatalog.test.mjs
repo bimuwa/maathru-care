@@ -25,6 +25,7 @@ test('search starts at first character, matches partial case-insensitively, and 
   assert.ok(keys('vit c').includes('vitamin_c_mg'));
   const fatMatches = keys('fat');
   assert.equal(fatMatches[0], 'fat_g');
+  assert.ok(keys('ir').includes('iron_mg'));
 });
 
 test('search omits selected nutrients to prevent duplicates and permits remove/re-add', () => {
@@ -35,7 +36,11 @@ test('search omits selected nutrients to prevent duplicates and permits remove/r
 test('catalog owns units and optional values preserve null and zero', () => {
   assert.equal(getNutrientDefinition('protein_g').unit, 'g');
   assert.equal(getNutrientDefinition('iron_mg').unit, 'mg');
+  assert.equal(getNutrientDefinition('gi_index').mainField, 'gi_index');
   assert.equal(validateNutrientValues({ protein_g: 3.25, sugar_g: 0, vitamin_c_mg: null }), null);
+  assert.equal(validateNutrientValues({ gi_index: 55 }), null);
+  assert.match(validateNutrientValues({ gi_index: 55.5 }), /whole number/);
+  assert.match(validateNutrientValues({ gi_index: 101 }), /100 or less/);
   assert.match(validateNutrientValues({ protein_g: -0.1 }), /zero or greater/);
   assert.match(validateNutrientValues({ protein_g: Number.NaN }), /valid number/);
   assert.match(validateNutrientValues({ protein_g: Number.POSITIVE_INFINITY }), /valid number/);

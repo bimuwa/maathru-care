@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   aggregateDiaryDay,
   aggregateDiaryWeek,
+  diaryReportCsv,
+  isUnverifiedCustomFood,
   mondayOf,
   parseLocalDate,
   shiftLocalDate,
@@ -79,4 +81,21 @@ test('weekly days agree with daily totals and no-record days stay empty', () => 
   assert.equal(week[0].nutrients.carbs_g.value, aggregateDiaryDay('2026-10-12', meals).nutrients.carbs_g.value);
   assert.equal(week[1].mealCount, 0);
   assert.equal(week[1].nutrients.carbs_g.value, null);
+});
+
+test('unverified custom foods are identified and included in exported daily and weekly CSV data', () => {
+  const custom = item('custom-1', {
+    food_id: 'custom_1', item_name: 'Homemade porridge', carbs_g: null,
+    custom_food_verification_status: 'unverified',
+    custom_food_nutrition_snapshot: { serving_unit: 'cup', carbs_g: 22, sugar_g: null, fiber_g: 3, fat_g: null, iron_mg: null, calcium_mg: null, gi_index: 55, other_nutrients: {} },
+  });
+  const verified = item('custom-2', { food_id: 'custom_2', custom_food_verification_status: 'verified' });
+  const day = aggregateDiaryDay('2026-10-20', [meal('meal', '2026-10-20', [custom, verified])]);
+  assert.equal(isUnverifiedCustomFood(custom), true);
+  assert.equal(isUnverifiedCustomFood(verified), false);
+  const csv = diaryReportCsv('Daily report', [day]);
+  assert.match(csv, /Homemade porridge/);
+  assert.match(csv, /Not verified/);
+  assert.match(csv, /Fiber: 3 mg|Fiber: 3 g/);
+  assert.match(csv, /22 g/);
 });

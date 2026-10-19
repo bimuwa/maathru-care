@@ -284,15 +284,17 @@ test('correction search ignores a stale response when its modal closes', async (
     node.arguments[0]?.getText(source).includes('Food correction search failed:'))[0].arguments[0];
   const response = deferred();
   let runSearch, results;
-  const query = { select() { return this; }, ilike() { return this; }, limit() { return response.promise; } };
   const start = vm.runInNewContext(ts.transpileModule(`(${effect.getText(source)})`, { compilerOptions }).outputText, {
-    isSearchModalVisible: true, searchQuery: 'Rice', supabase: { from: () => query }, setSearchError() {}, setIsSearching() {},
+    isSearchModalVisible: true, searchQuery: 'Rice',
+    foodSearchService: { searchMaternalFoods: () => response.promise },
+    customFoodService: { search: async () => [] }, rankCombinedFoodResults: rows => rows,
+    setSearchError() {}, setCustomSearchWarning() {}, setIsSearching() {},
     setSearchResults: value => { results = value; }, setTimeout: fn => { runSearch = fn; return 1; }, clearTimeout() {}, console,
   });
   const cleanup = start();
   const running = runSearch();
   cleanup();
-  response.resolve({ data: [{ food_id: 'white_rice' }], error: null });
+  response.resolve([{ food_id: 'white_rice', display_name: 'White Rice' }]);
   await running;
   assert.equal(results, undefined);
 });

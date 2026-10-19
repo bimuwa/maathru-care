@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { MealItem } from '@/types/meal';
+import type { CustomFoodVerificationStatus } from '@/types/customFood';
 import { NUTRITION_CALCULATION_VERSION } from '@/services/nutritionCalculator';
 
 /** Meal persistence shares the app-wide verified Supabase Auth session. */
@@ -19,6 +20,13 @@ export interface SavedDiaryItem {
   fat_g: number | null;
   iron_mg: number | null;
   calcium_mg: number | null;
+  custom_food_verification_status: CustomFoodVerificationStatus | null;
+  custom_food_nutrition_snapshot: {
+    serving_unit: string | null;
+    carbs_g: number | null; sugar_g: number | null; fiber_g: number | null;
+    fat_g: number | null; iron_mg: number | null; calcium_mg: number | null;
+    gi_index: number | null; other_nutrients: Record<string, number | null>;
+  } | null;
 }
 
 export interface SavedDiaryMeal {
@@ -29,7 +37,7 @@ export interface SavedDiaryMeal {
   food_diary_items: SavedDiaryItem[];
 }
 
-const diaryMealColumns = 'id, logged_date, meal_type, created_at, food_diary_items(id, food_id, item_name, portion_amount, portion_unit, portion_provenance, carbs_g, sugar_g, fiber_g, fat_g, iron_mg, calcium_mg)';
+const diaryMealColumns = 'id, logged_date, meal_type, created_at, food_diary_items(id, food_id, item_name, portion_amount, portion_unit, portion_provenance, carbs_g, sugar_g, fiber_g, fat_g, iron_mg, calcium_mg, custom_food_verification_status, custom_food_nutrition_snapshot)';
 
 export function newDiaryRequestId(): string {
   const cryptoObject = globalThis.crypto as Crypto | undefined;

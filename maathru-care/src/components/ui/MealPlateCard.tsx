@@ -5,6 +5,7 @@ import { MealItem } from '@/types/meal';
 import { NutritionMiniBar } from './NutritionMiniBar';
 import { InlineQuantityEditor } from './InlineQuantityEditor';
 import { summarizeEstimatedMeal, type NutrientValues, type PortionUnit } from '@/services/nutritionCalculator';
+import { getNutrientDefinition } from '@/services/nutrientCatalog';
 
 interface MealPlateCardProps {
   items: MealItem[];
@@ -22,6 +23,13 @@ function nutrientText(nutrients: NutrientValues) {
   const entries = [['carbsG', 'Carbohydrates', 'g'], ['sugarG', 'Sugar', 'g'], ['fiberG', 'Fiber', 'g'], ['fatG', 'Fat', 'g'], ['ironMg', 'Iron', 'mg'], ['calciumMg', 'Calcium', 'mg']] as const;
   return entries.filter(([key]) => nutrients[key] !== null).map(([key, label, unit]) => `${label}: ${nutrients[key]!.toFixed(1)} ${unit}`).join(' · ');
 }
+function customPerServingText(values: Record<string, number | null> | undefined) {
+  if (!values) return '';
+  return Object.entries(values).flatMap(([key, value]) => {
+    const definition = getNutrientDefinition(key);
+    return definition && value !== null ? [`${definition.label}: ${value} ${definition.unit}`] : [];
+  }).join(' · ');
+}
 export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity, onEditFood, onRetryReference }: MealPlateCardProps) {
   const summary = summarizeEstimatedMeal(items);
   return <View style={styles.card} testID="meal-plate">
@@ -36,7 +44,7 @@ export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity,
             <View style={styles.description}>
               <Text style={styles.name}>{name}</Text>
               <Text style={styles.quantityStatus}>{QUANTITY_LABELS[status]}</Text>
-              {item.customFood && <Text style={styles.unavailable}>My Food · Not doctor verified · Nutrition data unavailable</Text>}
+              {item.customFood && <Text style={styles.unavailable}>My Food · {item.customFoodVerificationStatus === 'verified' ? 'Verified' : item.customFoodVerificationStatus === 'rejected' ? 'Rejected' : 'Not verified'}</Text>}
             </View>
             {item.confidence !== null && <View style={styles.aiBadge} accessibilityLabel="Food identified by AI">
               <Sparkles size={12} color="#047857" /><Text style={styles.aiBadgeText}>AI match</Text>
@@ -51,6 +59,7 @@ export function MealPlateCard({ items, mealType, onRemoveItem, onUpdateQuantity,
             />
             {item.referenceStatus === 'loading' && <Text style={styles.subtitle}>Checking nutrition…</Text>}
             {item.portion && item.portion.amount > 0 && item.calculatedNutrients && nutrientText(item.calculatedNutrients) && <Text style={styles.nutrients}>Estimated Nutrition · {nutrientText(item.calculatedNutrients)}</Text>}
+            {item.customFood && customPerServingText(item.customFoodNutrition) && <Text style={styles.nutrients}>User-entered per serving ({item.customFoodServingUnit || 'serving'}) · {customPerServingText(item.customFoodNutrition)}</Text>}
             {!item.nutritionRecord && item.referenceStatus === 'error' && <Text style={styles.unavailable}>Nutrition couldn’t load.</Text>}
           </>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>

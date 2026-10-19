@@ -1,5 +1,6 @@
 import type { FoodNutritionRecord, NutrientValues, PortionInput, QuantityEvidence, QuantityProvenance, PortionUnit, ReferenceBasis } from '../services/nutritionCalculator';
 import type { RawFoodDetection } from '../services/foodQuantitySuggestions';
+import type { CustomFoodVerificationStatus } from './customFood';
 
 export type ScanState =
   | 'idle'
@@ -25,6 +26,9 @@ export interface MealItem {
   scanDetections?: RawFoodDetection[];
   referenceStatus?: 'loading' | 'loaded' | 'unmapped' | 'error';
   customFood?: boolean;
+  customFoodNutrition?: Record<string, number | null>;
+  customFoodServingUnit?: string | null;
+  customFoodVerificationStatus?: CustomFoodVerificationStatus;
 
   timestamp: number;
 }

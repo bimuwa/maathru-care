@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { foodDiaryService, type SavedDiaryMeal } from '@/services/foodDiaryService';
+import { getNutrientDefinition } from '@/services/nutrientCatalog';
 
 const nutrientRows = [
   ['carbs_g', 'Carbs', 'g'], ['sugar_g', 'Total sugar', 'g'], ['fiber_g', 'Fiber', 'g'],
@@ -9,6 +10,18 @@ const nutrientRows = [
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const shiftDate = (iso: string, amount: number) => { const [y, m, d] = iso.split('-').map(Number); const date = new Date(y, m - 1, d + amount); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 const prettyDate = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }); };
+function customSnapshotText(snapshot: NonNullable<SavedDiaryMeal['food_diary_items'][number]['custom_food_nutrition_snapshot']>) {
+  const values: Record<string, number | null> = {
+    carbs_g: snapshot.carbs_g, sugar_g: snapshot.sugar_g, fiber_g: snapshot.fiber_g,
+    fat_g: snapshot.fat_g, iron_mg: snapshot.iron_mg, calcium_mg: snapshot.calcium_mg,
+    gi_index: snapshot.gi_index, ...(snapshot.other_nutrients ?? {}),
+  };
+  return Object.entries(values).map(([key, value]) => {
+    const nutrient = getNutrientDefinition(key);
+    if (!nutrient) return null;
+    return `${nutrient.label} ${value === null ? 'unknown' : `${value} ${nutrient.unit}`}`;
+  }).filter(Boolean).join(' · ');
+}
 
 export function FoodDiaryHistory({ date, refreshKey, signedIn, setupReady, onSignIn, openAllOnMount = false }: {
   date: string; refreshKey: number; signedIn: boolean; setupReady: boolean; onSignIn: () => void; openAllOnMount?: boolean;
@@ -58,6 +71,8 @@ export function FoodDiaryHistory({ date, refreshKey, signedIn, setupReady, onSig
       return <View key={item.id} style={{ paddingLeft: 8, gap: 3 }}>
         <Text style={{ color: '#334155', fontWeight: '600' }}>{item.item_name} · {quantity}</Text>
         {detailed && <Text style={{ color: '#64748B', fontSize: 12 }}>{nutrients}</Text>}
+        {detailed && item.custom_food_nutrition_snapshot && <Text style={{ color: '#92400E', fontSize: 12 }}>User-entered per serving ({item.custom_food_nutrition_snapshot.serving_unit || 'serving'}) · {customSnapshotText(item.custom_food_nutrition_snapshot)}</Text>}
+        {detailed && item.custom_food_verification_status && <Text style={{ color: item.custom_food_verification_status === 'verified' ? '#047857' : '#B91C1C', fontSize: 11, fontWeight: '600' }}>My Food · {item.custom_food_verification_status === 'verified' ? 'Verified' : item.custom_food_verification_status === 'rejected' ? 'Rejected' : 'Not verified'}</Text>}
         {detailed && <Text style={{ color: '#94A3B8', fontSize: 11 }}>Nutrient values are estimates when available.</Text>}
       </View>;
     })}

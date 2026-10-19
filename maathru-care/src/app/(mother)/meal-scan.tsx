@@ -32,8 +32,8 @@ import { CustomFoodsModal } from '@/components/ui/CustomFoodsModal';
 import type { UserCustomFood } from '@/types/customFood';
 
 // API & Services
-import { customFoodService } from '@/services/customFoodService';
-import { foodSearchService } from '@/services/foodSearch';
+import { customFoodNutritionValues, customFoodService } from '@/services/customFoodService';
+import { foodSearchService, rankCombinedFoodResults } from '@/services/foodSearch';
 import { analyzeMealImage } from '@/services/api/foodDetector';
 import { useAuth } from '@/context/AuthContext';
 import { foodDiaryService, newDiaryRequestId } from '@/services/foodDiaryService';
@@ -240,10 +240,10 @@ export default function DetectScreen() {
             ? 'My Foods is not set up for this app yet. Built-in foods are available; an administrator needs to apply the custom food database migration.'
             : 'Saved custom foods could not be loaded. The built-in food database is still available.'
           : null);
-        setSearchResults([
-          ...catalogResult.value.map((food) => ({ ...food, resultSource: 'catalog' })),
-          ...customFoods.map((food) => ({ ...food, resultSource: 'custom', customRecord: food })),
-        ]);
+        setSearchResults(rankCombinedFoodResults([
+          ...catalogResult.value.map((food) => ({ ...food, resultSource: 'catalog' as const })),
+          ...customFoods.map((food) => ({ ...food, resultSource: 'custom' as const, customRecord: food })),
+        ], searchQuery));
       } catch (error) {
         if (!active) return;
         console.error('Food correction search failed:', error);
@@ -305,6 +305,8 @@ export default function DetectScreen() {
       id, foodId: food.food_id, name: food.display_name, confidence: null,
       nutritionRecord: record, portion: null, calculatedNutrients: null,
       timestamp: Date.now(), referenceStatus: 'loaded', rawDetections: [], customFood: true,
+      customFoodNutrition: customFoodNutritionValues(food), customFoodServingUnit: food.serving_unit,
+      customFoodVerificationStatus: food.verification_status,
     };
     setMealItems((previous) => [...previous, item]);
     setShowCustomFoods(false);
@@ -944,7 +946,7 @@ export default function DetectScreen() {
                       {item.display_name}
                     </Text>
                     <Text style={{ fontSize: 12, color: item.resultSource === 'custom' ? '#92400E' : '#047857', fontWeight: '600' }}>
-                      {item.resultSource === 'custom' ? 'My Food · Not doctor verified' : 'Food Database'}
+                      {item.resultSource === 'custom' ? `My Food · ${item.customRecord?.verification_status === 'verified' ? 'Verified' : item.customRecord?.verification_status === 'rejected' ? 'Rejected' : 'Not verified'}` : 'Food Database'}
                     </Text>
                     {item.resultSource !== 'custom' && <Text style={{ fontSize: 13, color: '#64748B' }}>
                       {item.carbs_g}g Carbs • {item.sugar_g}g Sugar

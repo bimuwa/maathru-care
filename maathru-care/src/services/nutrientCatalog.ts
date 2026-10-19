@@ -3,18 +3,19 @@ export interface NutrientDefinition {
   label: string;
   unit: string;
   aliases: readonly string[];
-  /** Existing diary fields supported by its current snapshot and calculator. */
-  diaryField?: 'carbs_g' | 'sugar_g' | 'fiber_g' | 'fat_g' | 'iron_mg' | 'calcium_mg';
+  mainField?: 'carbs_g' | 'sugar_g' | 'fiber_g' | 'fat_g' | 'iron_mg' | 'calcium_mg' | 'gi_index';
+  integer?: boolean;
+  maximum?: number;
 }
 
 export const NUTRIENT_DEFINITIONS: readonly NutrientDefinition[] = [
   { key: 'energy_kcal', label: 'Calories / Energy', unit: 'kcal', aliases: ['calories', 'calorie', 'energy', 'kcal'] },
   { key: 'protein_g', label: 'Protein', unit: 'g', aliases: ['protein', 'proteins'] },
-  { key: 'carbs_g', label: 'Total Carbohydrate', unit: 'g', aliases: ['carbs', 'carbohydrate', 'carbohydrates', 'total carbs'], diaryField: 'carbs_g' },
-  { key: 'fiber_g', label: 'Dietary Fiber', unit: 'g', aliases: ['fiber', 'fibre', 'dietary fiber', 'dietary fibre'], diaryField: 'fiber_g' },
-  { key: 'sugar_g', label: 'Total Sugar', unit: 'g', aliases: ['sugar', 'sugars', 'total sugar', 'total sugars'], diaryField: 'sugar_g' },
+  { key: 'carbs_g', label: 'Total Carbohydrate', unit: 'g', aliases: ['carbs', 'carbohydrate', 'carbohydrates', 'total carbs'], mainField: 'carbs_g' },
+  { key: 'fiber_g', label: 'Dietary Fiber', unit: 'g', aliases: ['fiber', 'fibre', 'dietary fiber', 'dietary fibre'], mainField: 'fiber_g' },
+  { key: 'sugar_g', label: 'Total Sugar', unit: 'g', aliases: ['sugar', 'sugars', 'total sugar', 'total sugars'], mainField: 'sugar_g' },
   { key: 'added_sugar_g', label: 'Added Sugar', unit: 'g', aliases: ['added sugar', 'added sugars'] },
-  { key: 'fat_g', label: 'Total Fat', unit: 'g', aliases: ['fat', 'fats', 'total fat'], diaryField: 'fat_g' },
+  { key: 'fat_g', label: 'Total Fat', unit: 'g', aliases: ['fat', 'fats', 'total fat'], mainField: 'fat_g' },
   { key: 'saturated_fat_g', label: 'Saturated Fat', unit: 'g', aliases: ['saturated fat', 'sat fat'] },
   { key: 'monounsaturated_fat_g', label: 'Monounsaturated Fat', unit: 'g', aliases: ['monounsaturated', 'monounsaturated fat', 'mufa'] },
   { key: 'polyunsaturated_fat_g', label: 'Polyunsaturated Fat', unit: 'g', aliases: ['polyunsaturated', 'polyunsaturated fat', 'pufa'] },
@@ -22,8 +23,9 @@ export const NUTRIENT_DEFINITIONS: readonly NutrientDefinition[] = [
   { key: 'cholesterol_mg', label: 'Cholesterol', unit: 'mg', aliases: ['cholesterol'] },
   { key: 'sodium_mg', label: 'Sodium', unit: 'mg', aliases: ['sodium', 'salt'] },
   { key: 'potassium_mg', label: 'Potassium', unit: 'mg', aliases: ['potassium'] },
-  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', aliases: ['calcium', 'ca'], diaryField: 'calcium_mg' },
-  { key: 'iron_mg', label: 'Iron', unit: 'mg', aliases: ['iron', 'fe'], diaryField: 'iron_mg' },
+  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', aliases: ['calcium', 'ca'], mainField: 'calcium_mg' },
+  { key: 'iron_mg', label: 'Iron', unit: 'mg', aliases: ['iron', 'fe'], mainField: 'iron_mg' },
+  { key: 'gi_index', label: 'Glycemic Index (GI)', unit: 'index', aliases: ['gi', 'glycemic index', 'glycaemic index'], mainField: 'gi_index', integer: true, maximum: 100 },
   { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg', aliases: ['magnesium', 'mg'] },
   { key: 'phosphorus_mg', label: 'Phosphorus', unit: 'mg', aliases: ['phosphorus', 'phosphate'] },
   { key: 'zinc_mg', label: 'Zinc', unit: 'mg', aliases: ['zinc'] },
@@ -75,8 +77,11 @@ export function validateNutrientValues(values: Record<string, unknown>): string 
   for (const [key, value] of Object.entries(values)) {
     if (!allowed.has(key)) return 'Remove an unsupported nutrition value and try again.';
     if (value === null || value === undefined) continue;
-    if (typeof value !== 'number' || !Number.isFinite(value)) return `Enter a valid number for ${NUTRIENT_DEFINITIONS.find((item) => item.key === key)?.label ?? key}.`;
-    if (value < 0) return `${NUTRIENT_DEFINITIONS.find((item) => item.key === key)?.label ?? 'Nutrition values'} must be zero or greater.`;
+    const definition = NUTRIENT_DEFINITIONS.find((item) => item.key === key);
+    if (typeof value !== 'number' || !Number.isFinite(value)) return `Enter a valid number for ${definition?.label ?? key}.`;
+    if (value < 0) return `${definition?.label ?? 'Nutrition values'} must be zero or greater.`;
+    if (definition?.integer && !Number.isInteger(value)) return `${definition.label} must be a whole number.`;
+    if (definition?.maximum !== undefined && value > definition.maximum) return `${definition.label} must be ${definition.maximum} or less.`;
   }
   return null;
 }

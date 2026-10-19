@@ -1,6 +1,6 @@
 import { nutritionApi } from '@/services/nutritionApi';
 import type { CustomFoodInput, UserCustomFood } from '@/types/customFood';
-import { validateNutrientValues } from '@/services/nutrientCatalog';
+import { NUTRIENT_DEFINITIONS, validateNutrientValues } from '@/services/nutrientCatalog';
 
 function cleanInput(input: CustomFoodInput) {
   const display_name = input.display_name.trim().replace(/\s+/g, ' ');
@@ -10,14 +10,35 @@ function cleanInput(input: CustomFoodInput) {
   const nutritionValues = input.nutrition_values ?? {};
   const nutritionError = validateNutrientValues(nutritionValues);
   if (nutritionError) throw new Error(nutritionError);
+  const mainValues: Record<string, number | null> = {};
+  const otherNutrients: Record<string, number | null> = {};
+  for (const [key, value] of Object.entries(nutritionValues)) {
+    const definition = NUTRIENT_DEFINITIONS.find((item) => item.key === key);
+    if (!definition) throw new Error('This nutrition field is not supported.');
+    if (definition.mainField) mainValues[definition.mainField] = value ?? null;
+    else otherNutrients[key] = value ?? null;
+  }
   return {
     display_name,
     english_name: optional(input.english_name),
     sinhala_name: optional(input.sinhala_name),
     category: optional(input.category),
     serving_unit: optional(input.serving_unit),
-    ...(input.nutrition_values !== undefined ? { nutrition_values: Object.fromEntries(Object.entries(nutritionValues).map(([key, value]) => [key, value ?? null])) } : {}),
+    ...(input.nutrition_values !== undefined ? {
+      ...Object.fromEntries(['carbs_g', 'sugar_g', 'fiber_g', 'fat_g', 'iron_mg', 'calcium_mg', 'gi_index'].map((key) => [key, mainValues[key] ?? null])),
+      other_nutrients: otherNutrients,
+    } : {}),
   };
+}
+
+export function customFoodNutritionValues(food: Pick<UserCustomFood, 'carbs_g' | 'sugar_g' | 'fiber_g' | 'fat_g' | 'iron_mg' | 'calcium_mg' | 'gi_index' | 'other_nutrients'>) {
+  const values: Record<string, number | null> = { ...(food.other_nutrients ?? {}) };
+  for (const definition of NUTRIENT_DEFINITIONS) {
+    if (!definition.mainField) continue;
+    const value = food[definition.mainField];
+    if (value !== null && value !== undefined) values[definition.key] = value;
+  }
+  return values;
 }
 
 export const customFoodService = {

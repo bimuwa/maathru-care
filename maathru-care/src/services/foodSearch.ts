@@ -81,6 +81,34 @@ export function rankMaternalFoodResults(
     .map(({ food }) => food);
 }
 
+export type CombinedFoodSearchResult = {
+  food_id: string; display_name: string; resultSource: 'catalog' | 'custom';
+  english_name?: unknown; scientific_name?: unknown; sinhala_name?: unknown; category?: unknown;
+};
+
+/** Rank the already-filtered global and owner-scoped result sets together. */
+export function rankCombinedFoodResults<T extends CombinedFoodSearchResult>(rows: readonly T[], query: string, limit = 20): T[] {
+  const needle = normalizeFoodSearchText(query);
+  if (!needle) return [];
+  const fields = (row: T) => [row.display_name, row.english_name, row.scientific_name, row.sinhala_name, row.food_id, row.category]
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => normalizeFoodSearchText(value));
+  const rank = (row: T) => {
+    const values = fields(row);
+    const exact = values.findIndex((value) => value === needle);
+    if (exact >= 0) return exact;
+    const prefix = values.findIndex((value) => value.startsWith(needle));
+    if (prefix >= 0) return 10 + prefix;
+    const contains = values.findIndex((value) => value.includes(needle));
+    return contains >= 0 ? 20 + contains : 30;
+  };
+  const unique = new Map<string, T>();
+  for (const row of rows) if (row.food_id && !unique.has(row.food_id.toLocaleLowerCase())) unique.set(row.food_id.toLocaleLowerCase(), row);
+  return [...unique.values()].sort((a, b) => rank(a) - rank(b)
+    || (a.resultSource === b.resultSource ? 0 : a.resultSource === 'catalog' ? -1 : 1)
+    || a.display_name.localeCompare(b.display_name)).slice(0, Math.max(1, limit));
+}
+
 export const foodSearchService = {
   async searchMaternalFoods(query: string): Promise<MaternalFoodSearchRow[]> {
     const normalized = normalizeFoodSearchText(query);
