@@ -75,9 +75,10 @@ export default function MotherHomeScreen() {
   const fetchData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [historyRes, alertsRes] = await Promise.all([
+      const [historyRes, alertsRes, apptsRes] = await Promise.all([
         api.getRiskHistory(user.id).catch(() => ({ success: false, history: [] })),
         api.getPatientAlerts(user.id).catch(() => ({ success: false, alerts: [] })),
+        api.getPatientAppointments(user.id).catch(() => ({ success: false, appointments: [] })),
       ]);
 
       if (historyRes.success && (historyRes as any).history?.length > 0) {
@@ -85,15 +86,14 @@ export default function MotherHomeScreen() {
         setHasAlert((historyRes as any).history[0].isAlertRequired);
       }
 
-      // Check for upcoming appointment alerts
-      if (alertsRes.success) {
-        const allAlerts: any[] = (alertsRes as any).alerts ?? [];
-        const apptAlert = allAlerts.find(a =>
-          a.alertType === 'appointment' ||
-          a.alert_type === 'appointment' ||
-          a.status === 'Upcoming'
-        );
-        setUpcomingAppointment(apptAlert || null);
+      // Check exclusively for appointments scheduled via the doctor's appointment system
+      if (apptsRes.success && apptsRes.appointments && apptsRes.appointments.length > 0) {
+        const scheduled = (apptsRes.appointments as any[]).filter(a => a.status === 'scheduled');
+        scheduled.sort((a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime());
+        const nextAppt = scheduled.find(a => new Date(a.appointmentDate).getTime() >= Date.now() - 3600000) || scheduled[0];
+        setUpcomingAppointment(nextAppt || null);
+      } else {
+        setUpcomingAppointment(null);
       }
     } catch { }
     finally { setIsLoading(false); setRefreshing(false); }
@@ -206,10 +206,7 @@ export default function MotherHomeScreen() {
         {/* ── Appointment Notification Banner ─────────────────────────────────── */}
         {upcomingAppointment && (
           <TouchableOpacity
-            onPress={() => router.push({
-              pathname: '/mother-doctor-profile',
-              params: { doctorId: user?.assignedDoctorId ?? '', doctorName: user?.assignedDoctorName ?? '' }
-            })}
+            onPress={() => router.push('/appointments')}
             activeOpacity={0.85}
             style={{
               backgroundColor: '#EFF6FF',
@@ -229,12 +226,16 @@ export default function MotherHomeScreen() {
               <Text style={{ color: '#1E40AF', fontWeight: 'bold', fontSize: 13 }}>
                 📅 Appointment Scheduled!
               </Text>
-              <Text style={{ color: '#3B82F6', fontSize: 12, marginTop: 2 }} numberOfLines={1}>
-                {upcomingAppointment.alertMessage?.split('\n')[1]?.replace('Date & Time: ', '') ||
-                  upcomingAppointment.scheduledAt ||
-                  'Your doctor has scheduled a visit'}
+              <Text style={{ color: '#2563EB', fontSize: 13, marginTop: 2, fontWeight: '700' }} numberOfLines={1}>
+                {new Date(upcomingAppointment.appointmentDate).toLocaleDateString('en-US', {
+                  month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+                })}
               </Text>
-              <Text style={{ color: '#93C5FD', fontSize: 10, marginTop: 2 }}>Tap to view details →</Text>
+              <Text style={{ color: '#64748B', fontSize: 11, marginTop: 1 }} numberOfLines={1}>
+                {upcomingAppointment.appointmentType ? (upcomingAppointment.appointmentType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())) : 'Checkup'}
+                {upcomingAppointment.doctorName ? ` with ${upcomingAppointment.doctorName}` : ''}
+              </Text>
+              <Text style={{ color: '#2563EB', fontSize: 10, marginTop: 3, fontWeight: '600' }}>Tap to view details →</Text>
             </View>
             <ChevronRight color="#93C5FD" size={16} />
           </TouchableOpacity>

@@ -51,6 +51,22 @@ router.get('/weight/:patientId', async (req: Request, res: Response) => {
   }
 });
 
+// ─── DELETE /weight/:patientId — Clear all weight logs for a patient ───────────
+router.delete('/weight/:patientId', async (req: Request, res: Response) => {
+  try {
+    const supabase = db.getSupabase();
+    const { error } = await supabase
+      .from('weight_logs')
+      .delete()
+      .eq('patient_id', req.params.patientId);
+    if (error) throw error;
+    res.json({ success: true, message: 'Weight logs cleared successfully' });
+  } catch (err: any) {
+    console.error('[Reports] Weight reset error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── GET /summary/:patientId — Full health summary for PDF report ────────────
 router.get('/summary/:patientId', async (req: Request, res: Response) => {
   try {

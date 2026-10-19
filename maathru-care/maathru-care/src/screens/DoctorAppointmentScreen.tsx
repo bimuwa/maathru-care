@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, Platform, RefreshControl,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ArrowLeft, Calendar, Clock, MapPin, UserPlus, Check, X, Users, Plus } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +25,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 
 export default function DoctorAppointmentScreen() {
   const { user } = useAuth();
+  const params = useLocalSearchParams<{ patientId?: string; patientName?: string }>();
   const [tab, setTab] = useState<'schedule' | 'my'>('schedule');
   const [patients, setPatients] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -56,6 +57,23 @@ export default function DoctorAppointmentScreen() {
   }, [user?.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Pre-select patient if navigated from patient profile
+  useEffect(() => {
+    if (params.patientId) {
+      if (patients.length > 0) {
+        const found = patients.find(p => p.id === params.patientId);
+        if (found) {
+          setSelectedPatient(found);
+        } else {
+          setSelectedPatient({ id: params.patientId, fullName: params.patientName || 'Patient' });
+        }
+      } else if (params.patientName) {
+        setSelectedPatient({ id: params.patientId, fullName: params.patientName });
+      }
+    }
+  }, [params.patientId, params.patientName, patients]);
+
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
   const handleSchedule = async () => {

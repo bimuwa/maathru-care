@@ -48,15 +48,17 @@ export default function MotherDoctorProfileScreen() {
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
   const [riskHistory, setRiskHistory] = useState<RiskPredictionResult[]>([]);
   const [patientAlerts, setPatientAlerts] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [doctorsRes, riskRes, alertsRes] = await Promise.all([
+      const [doctorsRes, riskRes, alertsRes, apptsRes] = await Promise.all([
         api.getRegisteredDoctors().catch(() => ({ success: false, doctors: [] })),
         user?.id ? api.getRiskHistory(user.id).catch(() => ({ success: false, history: [] })) : Promise.resolve({ success: false, history: [] }),
         user?.id ? api.getPatientAlerts(user.id).catch(() => ({ success: false, alerts: [] })) : Promise.resolve({ success: false, alerts: [] }),
+        user?.id ? api.getPatientAppointments(user.id).catch(() => ({ success: false, appointments: [] })) : Promise.resolve({ success: false, appointments: [] }),
       ]);
 
       if (doctorsRes.success && doctorsRes.doctors) {
@@ -75,6 +77,7 @@ export default function MotherDoctorProfileScreen() {
 
       if (riskRes.success) setRiskHistory((riskRes as any).history ?? []);
       if (alertsRes.success) setPatientAlerts((alertsRes as any).alerts ?? []);
+      if (apptsRes.success && apptsRes.appointments) setAppointments(apptsRes.appointments);
     } catch (e) {
       console.warn('Failed to load doctor profile:', e);
     } finally {
@@ -92,12 +95,6 @@ export default function MotherDoctorProfileScreen() {
 
   // Also get standalone clinical_note alerts (added when doctor saves notes)
   const clinicalNoteAlerts = patientAlerts.filter(a => a.alertType === 'clinical_note' || (a.alert_type === 'clinical_note'));
-
-  // Appointments from alerts table
-  const appointmentAlerts = patientAlerts.filter(a =>
-    a.alertType === 'appointment' || (a.alert_type === 'appointment') ||
-    a.status === 'Upcoming' || a.status === 'Follow-up scheduled'
-  );
 
   return (
     <ScrollView
@@ -208,53 +205,78 @@ export default function MotherDoctorProfileScreen() {
 
         {/* Appointment History */}
         <View style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, marginBottom: 40, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-            <Calendar color="#2563EB" size={16} />
-            <Text style={{ color: '#1E293B', fontWeight: 'bold', fontSize: 14, marginLeft: 8 }}>Appointment History</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Calendar color="#2563EB" size={16} />
+              <Text style={{ color: '#1E293B', fontWeight: 'bold', fontSize: 14, marginLeft: 8 }}>Appointment History</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/appointments')}>
+              <Text style={{ color: '#2563EB', fontSize: 12, fontWeight: '600' }}>View All →</Text>
+            </TouchableOpacity>
           </View>
           {loading ? (
             <ActivityIndicator size="small" color="#2563EB" />
-          ) : appointmentAlerts.length > 0 ? (
-            appointmentAlerts.map((appt: any, i: number) => (
-              <View key={i} style={{
-                backgroundColor: '#EFF6FF',
-                borderRadius: 14,
-                padding: 14,
-                marginBottom: 10,
-                borderLeftWidth: 3,
-                borderLeftColor: '#2563EB',
-              }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Calendar color="#2563EB" size={13} />
-                    <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 13, marginLeft: 5 }}>
-                      {appt.alertTitle?.replace('📅 ', '') || 'Appointment'}
-                    </Text>
+          ) : appointments.length > 0 ? (
+            appointments.map((appt: any, i: number) => {
+              const isUpcoming = appt.status === 'scheduled';
+              const statusBg = isUpcoming ? '#DBEAFE' : appt.status === 'completed' ? '#D1FAE5' : '#F1F5F9';
+              const statusColor = isUpcoming ? '#1D4ED8' : appt.status === 'completed' ? '#065F46' : '#64748B';
+              const typeLabel = appt.appointmentType
+                ? (appt.appointmentType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()))
+                : 'Routine Checkup';
+              const dateStr = new Date(appt.appointmentDate).toLocaleDateString('en-US', {
+                weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+              });
+
+              return (
+                <View key={appt.id || i} style={{
+                  backgroundColor: '#EFF6FF',
+                  borderRadius: 14,
+                  padding: 14,
+                  marginBottom: 10,
+                  borderLeftWidth: 3,
+                  borderLeftColor: '#2563EB',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Calendar color="#2563EB" size={13} />
+                      <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 13, marginLeft: 5 }}>
+                        {typeLabel}
+                      </Text>
+                    </View>
+                    <View style={{
+                      backgroundColor: statusBg,
+                      paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10
+                    }}>
+                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: statusColor, textTransform: 'capitalize' }}>
+                        {appt.status}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{
-                    backgroundColor: appt.status === 'Upcoming' ? '#DBEAFE' : '#D1FAE5',
-                    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10
-                  }}>
-                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: appt.status === 'Upcoming' ? '#1D4ED8' : '#065F46' }}>
-                      {appt.status}
-                    </Text>
-                  </View>
+                  <Text style={{ color: '#1E40AF', fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
+                    <Clock color="#3B82F6" size={11} /> {dateStr}
+                  </Text>
+                  {appt.doctorName ? (
+                    <Text style={{ color: '#3B82F6', fontSize: 12, marginBottom: 2 }}>Doctor: {appt.doctorName}</Text>
+                  ) : null}
+                  {appt.location ? (
+                    <Text style={{ color: '#475569', fontSize: 12, marginBottom: 2 }}>📍 Location: {appt.location}</Text>
+                  ) : null}
+                  {appt.notes ? (
+                    <Text style={{ color: '#475569', fontSize: 12, marginBottom: 2 }}>📝 Notes: {appt.notes}</Text>
+                  ) : null}
+                  <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 4 }}>
+                    Scheduled: {appt.createdAt ? new Date(appt.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                  </Text>
                 </View>
-                <Text style={{ color: '#1E40AF', fontSize: 13, fontWeight: '600', marginBottom: 2 }}>
-                  <Clock color="#3B82F6" size={11} /> {appt.scheduledAt || appt.scheduled_at || 'Date TBC'}
-                </Text>
-                <Text style={{ color: '#3B82F6', fontSize: 12 }}>{appt.alertMessage}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 4 }}>
-                  Scheduled: {appt.createdAt ? new Date(appt.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                </Text>
-              </View>
-            ))
+              );
+            })
           ) : (
             <View style={{ alignItems: 'center', paddingVertical: 20 }}>
               <Calendar color="#BFDBFE" size={36} />
               <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8 }}>No appointments scheduled</Text>
               <Text style={{ color: '#CBD5E1', fontSize: 11, textAlign: 'center', marginTop: 4 }}>
-                Chat with your doctor to schedule your next visit.
+                Appointments scheduled by your doctor will appear here.
               </Text>
             </View>
           )}

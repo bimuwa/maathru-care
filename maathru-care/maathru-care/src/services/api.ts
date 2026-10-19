@@ -465,6 +465,10 @@ class ApiService {
     return this.request(`/reports/weight/${patientId}`);
   }
 
+  public async resetWeightLogs(patientId: string): Promise<{ success: boolean }> {
+    return this.request(`/reports/weight/${patientId}`, { method: 'DELETE' });
+  }
+
   // ─── Appointments ──────────────────────────────────────────────────────────
   public async createAppointment(data: {
     patientId: string; doctorId: string; appointmentDate: string;

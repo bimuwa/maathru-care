@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Rect, Line, Text as SvgText, Path, Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { ArrowLeft, TrendingUp, TrendingDown, Target, Plus, Scale } from 'lucide-react-native';
+import { ArrowLeft, TrendingUp, TrendingDown, Target, Plus, Scale, RotateCcw } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -73,6 +73,8 @@ export default function WeightGainScreen() {
           setBmiCat(getBMICategory(b));
           setSetupDone(true);
         }
+      } else {
+        setLogs([]);
       }
     } catch { /* silent */ }
     setLoading(false);
@@ -114,13 +116,55 @@ export default function WeightGainScreen() {
     setSaving(false);
   };
 
+  const handleResetConfirm = () => {
+    Alert.alert(
+      'Reset Weight Tracker?',
+      'Are you sure you want to reset all your weight logs and baseline details? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Reset',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user?.id) return;
+            setLoading(true);
+            try {
+              await api.resetWeightLogs(user.id);
+              setLogs([]);
+              setPreWeight('');
+              setHeightCm('');
+              setBmi(0);
+              setBmiCat('normal');
+              setSetupDone(false);
+              setNewWeight('');
+              Alert.alert('Reset Complete', 'Your weight tracker has been reset. You can now setup your baseline again.');
+            } catch {
+              Alert.alert('Error', 'Could not reset weight logs. Please try again.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const onRefresh = async () => { setRefreshing(true); await fetchLogs(); setRefreshing(false); };
 
-  // Chart data
+  // Chart and dynamic BMI calculations
   const ppw = parseFloat(preWeight) || 60;
-  const currentGain = logs.length > 0 ? logs[logs.length - 1].weightKg - ppw : 0;
+  const latestWeight = logs.length > 0 ? logs[logs.length - 1].weightKg : (parseFloat(preWeight) || 0);
+  const currentGain = logs.length > 0 ? latestWeight - ppw : 0;
   const rec = getRecommendedGain(bmiCat, user?.gestationalAgeWeeks || 0);
   const gd = IOM[bmiCat] || IOM.normal;
+
+  // Dynamic current BMI based on latest weight
+  const heightM = parseFloat(heightCm) ? parseFloat(heightCm) / 100 : 0;
+  const currentBmi = (latestWeight > 0 && heightM > 0)
+    ? +(latestWeight / (heightM * heightM)).toFixed(1)
+    : bmi;
+  const currentBmiCat = getBMICategory(currentBmi);
+  const currentBmiDetails = IOM[currentBmiCat] || IOM.normal;
 
   const status = currentGain < rec.min ? 'below' : currentGain > rec.max ? 'above' : 'on_track';
   const statusLabel = status === 'on_track' ? 'On Track' : status === 'below' ? 'Below Target' : 'Above Target';
@@ -169,8 +213,20 @@ export default function WeightGainScreen() {
             <Text className="text-slate-800 text-xl font-bold">Weight Tracker</Text>
             <Text className="text-slate-500 text-xs mt-0.5">IOM Guidelines Chart</Text>
           </View>
-          <View className="w-10 h-10 bg-emerald-50 rounded-full items-center justify-center">
-            <Scale color="#15803D" size={20} />
+          <View className="flex-row items-center gap-2">
+            {setupDone && (
+              <TouchableOpacity
+                onPress={handleResetConfirm}
+                activeOpacity={0.7}
+                className="flex-row items-center bg-red-50 border border-red-200 rounded-full px-3 py-1.5"
+              >
+                <RotateCcw color="#EF4444" size={13} />
+                <Text className="text-red-600 font-semibold text-xs ml-1">Reset</Text>
+              </TouchableOpacity>
+            )}
+            <View className="w-10 h-10 bg-emerald-50 rounded-full items-center justify-center">
+              <Scale color="#15803D" size={20} />
+            </View>
           </View>
         </View>
       </View>
@@ -196,11 +252,12 @@ export default function WeightGainScreen() {
                 {/* BMI Badge */}
                 <View className="flex-row mb-4 gap-3">
                   <View className="flex-1 bg-white rounded-[16px] p-4" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 }}>
-                    <Text className="text-slate-400 text-xs font-semibold">BMI</Text>
-                    <Text className="text-slate-800 font-bold text-xl">{bmi}</Text>
-                    <View className="rounded-full px-2 py-0.5 mt-1 self-start" style={{ backgroundColor: BMI_COLORS[bmiCat]?.bg }}>
-                      <Text className="text-xs font-bold" style={{ color: BMI_COLORS[bmiCat]?.text }}>{gd.label}</Text>
+                    <Text className="text-slate-400 text-xs font-semibold">CURRENT BMI</Text>
+                    <Text className="text-slate-800 font-bold text-xl">{currentBmi}</Text>
+                    <View className="rounded-full px-2 py-0.5 mt-1 self-start" style={{ backgroundColor: BMI_COLORS[currentBmiCat]?.bg }}>
+                      <Text className="text-xs font-bold" style={{ color: BMI_COLORS[currentBmiCat]?.text }}>{currentBmiDetails.label}</Text>
                     </View>
+                    <Text className="text-slate-400 text-[10px] mt-1.5">At {latestWeight} kg</Text>
                   </View>
                   <View className="flex-1 bg-white rounded-[16px] p-4" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 }}>
                     <Text className="text-slate-400 text-xs font-semibold">GAIN SO FAR</Text>
@@ -208,6 +265,7 @@ export default function WeightGainScreen() {
                     <View className="rounded-full px-2 py-0.5 mt-1 self-start" style={{ backgroundColor: statusBg }}>
                       <Text className="text-xs font-bold" style={{ color: statusColor }}>{statusLabel}</Text>
                     </View>
+                    <Text className="text-slate-400 text-[10px] mt-1.5">Baseline: {ppw} kg</Text>
                   </View>
                 </View>
 

@@ -189,12 +189,6 @@ export default function DoctorPatientDetailScreen() {
   const [summary, setSummary] = useState<any>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
-  // Appointment Modal
-  const [apptVisible, setApptVisible] = useState(false);
-  const [apptDate, setApptDate] = useState('');
-  const [apptReason, setApptReason] = useState('Follow-up visit');
-  const [schedulingAppt, setSchedulingAppt] = useState(false);
-
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -262,26 +256,6 @@ export default function DoctorPatientDetailScreen() {
     }
   };
 
-  const handleScheduleAppointment = async () => {
-    if (!apptDate.trim()) {
-      Alert.alert('Date Required', 'Please enter a date and time for the appointment.');
-      return;
-    }
-    setSchedulingAppt(true);
-    try {
-      await api.scheduleAppointment(patientId, apptDate.trim(), apptReason, user?.id ?? '', user?.fullName);
-      setApptVisible(false);
-      setApptDate('');
-      setApptReason('Follow-up visit');
-      Alert.alert('📅 Appointment Scheduled', `Appointment set for ${apptDate}. Pending alerts for this patient have been updated.`);
-      loadData(); // Refresh
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to schedule appointment.');
-    } finally {
-      setSchedulingAppt(false);
-    }
-  };
-
   const currentRisk = riskHistory[0];
   const prevRisk = riskHistory[1];
   const riskColor = currentRisk ? RISK_COLORS[currentRisk.riskLevel] ?? '#10B981' : '#10B981';
@@ -333,7 +307,10 @@ export default function DoctorPatientDetailScreen() {
               <Text className="text-white font-bold text-xs mt-1 text-center">AI Summary</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => setApptVisible(true)}
+              onPress={() => router.push({
+                pathname: '/doctor-appointments',
+                params: { patientId, patientName }
+              })}
               className="flex-1 bg-blue-600 rounded-[16px] py-4 items-center"
             >
               <Calendar color="#FFFFFF" size={18} />
@@ -569,50 +546,6 @@ export default function DoctorPatientDetailScreen() {
             ) : (
               <Text className="text-slate-400 text-center py-8">Could not generate summary.</Text>
             )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Schedule Appointment Modal */}
-      <Modal visible={apptVisible} animationType="slide" transparent>
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-white rounded-t-[28px] p-6">
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-slate-800 font-bold text-lg">Schedule Appointment</Text>
-              <TouchableOpacity onPress={() => setApptVisible(false)}>
-                <X color="#94A3B8" size={22} />
-              </TouchableOpacity>
-            </View>
-            <Text className="text-slate-500 text-xs mb-4">
-              Scheduling an appointment for {patientName} will update pending alerts and notify the patient.
-            </Text>
-            <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-2">Date & Time</Text>
-            <TextInput
-              value={apptDate}
-              onChangeText={setApptDate}
-              placeholder="e.g. 2026-09-15 10:00 AM"
-              placeholderTextColor="#CBD5E1"
-              className="bg-slate-50 border border-slate-200 rounded-[14px] px-4 py-3.5 text-slate-700 text-sm mb-4"
-            />
-            <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-2">Reason</Text>
-            <TextInput
-              value={apptReason}
-              onChangeText={setApptReason}
-              placeholder="Reason for appointment"
-              placeholderTextColor="#CBD5E1"
-              className="bg-slate-50 border border-slate-200 rounded-[14px] px-4 py-3.5 text-slate-700 text-sm mb-5"
-            />
-            <TouchableOpacity
-              onPress={handleScheduleAppointment}
-              disabled={schedulingAppt}
-              className="bg-blue-600 rounded-[14px] py-4 items-center"
-            >
-              {schedulingAppt ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text className="text-white font-bold">Confirm Appointment</Text>
-              )}
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
