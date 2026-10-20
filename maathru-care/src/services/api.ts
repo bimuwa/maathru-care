@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import type { UserCustomFood, CustomFoodVerificationStatus } from '../types/customFood';
 import type { SavedDiaryMeal } from './foodDiaryService';
+import { toGdmV4Binary } from '../types/gdmV4';
 
 const BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL || Platform.select({
   // The web app runs on the same computer as the local API. Native devices still
@@ -30,21 +31,11 @@ export interface RegisterData {
   medicalLicense?: string;
   specialty?: string;
   hospital?: string;
-  // Additional Mother fields for risk assessment
+  // Pregnancy timing/profile details retained for active mother-care features
   gestationalWeek?: string;
-  gestationInPreviousPregnancy?: string;
-  bmi?: string;
-  hdl?: string;
-  familyHistory?: boolean;
-  unexplainedPrenatalLoss?: boolean;
-  largeChildOrBirthDefault?: boolean;
-  pcos?: boolean;
-  sysBp?: string;
-  diaBp?: string;
-  ogtt?: string;
-  hemoglobin?: string;
-  sedentaryLifestyle?: boolean;
-  prediabetes?: boolean;
+  familyHistory?: boolean | null;
+  unexplainedPrenatalLoss?: boolean | null;
+  sedentaryLifestyle?: boolean | null;
 }
 
 export interface LoginResponse {
@@ -313,13 +304,9 @@ class ApiService {
       age: data.age ? Number(data.age) : null, blood_group: data.bloodGroup || null,
       gestational_week: data.gestationalWeek ? Number(data.gestationalWeek) : null,
       no_of_pregnancy: data.gravida ? Number(data.gravida) : null,
-      gestation_in_previous_pregnancy: data.gestationInPreviousPregnancy ? Number(data.gestationInPreviousPregnancy) : null,
-      bmi: data.bmi ? Number(data.bmi) : null, hdl: data.hdl ? Number(data.hdl) : null,
-      sys_bp: data.sysBp ? Number(data.sysBp) : null, dia_bp: data.diaBp ? Number(data.diaBp) : null,
-      ogtt: data.ogtt ? Number(data.ogtt) : null, hemoglobin: data.hemoglobin ? Number(data.hemoglobin) : null,
-      family_history: data.familyHistory ? 1 : 0, unexplained_prenatal_loss: data.unexplainedPrenatalLoss ? 1 : 0,
-      large_child_or_birth_default: data.largeChildOrBirthDefault ? 1 : 0, pcos: data.pcos ? 1 : 0,
-      sedentary_lifestyle: data.sedentaryLifestyle ? 1 : 0, prediabetes: data.prediabetes ? 1 : 0,
+      family_history: toGdmV4Binary(data.familyHistory),
+      unexplained_prenatal_loss: toGdmV4Binary(data.unexplainedPrenatalLoss),
+      sedentary_lifestyle: toGdmV4Binary(data.sedentaryLifestyle),
     });
     else Object.assign(metadata, { medical_license: data.medicalLicense, specialty: data.specialty, hospital: data.hospital });
     const { data: auth, error } = await this.withTimeout(supabase.auth.signUp({

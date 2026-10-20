@@ -36,6 +36,22 @@ interface DoctorInfo {
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 
+function GdmYesNoChoice({ value, onChange }: { value: boolean | null; onChange: (value: boolean) => void }) {
+  return <View className="flex-row gap-3 mb-4">
+    {[
+      { value: true, label: 'ඔව් / Yes' },
+      { value: false, label: 'නැහැ / No' },
+    ].map((option) => {
+      const selected = value === option.value;
+      return <TouchableOpacity key={option.label} accessibilityRole="radio" accessibilityState={{ checked: selected }}
+        onPress={() => onChange(option.value)} className="flex-1 items-center justify-center rounded-[14px] py-3 border"
+        style={{ backgroundColor: selected ? '#15803D' : '#F8FAFC', borderColor: selected ? '#15803D' : '#CBD5E1' }}>
+        <Text className="font-bold text-sm" style={{ color: selected ? '#FFFFFF' : '#475569' }}>{option.label}</Text>
+      </TouchableOpacity>;
+    })}
+  </View>;
+}
+
 export default function RegisterScreen() {
   const router = useRouter();
   const { login } = useAuth();
@@ -56,20 +72,9 @@ export default function RegisterScreen() {
   const [bloodGroup, setBloodGroup] = useState('');
   const [lmpDate, setLmpDate] = useState('');
   const [gravida, setGravida] = useState('');
-  const [gestationInPrevious, setGestationInPrevious] = useState('');
-  const [bmi, setBmi] = useState('');
-  const [hdl, setHdl] = useState('');
-  const [sysBp, setSysBp] = useState('');
-  const [diaBp, setDiaBp] = useState('');
-  const [ogtt, setOgtt] = useState('');
-  const [hemoglobin, setHemoglobin] = useState('');
-  
-  const [familyHistory, setFamilyHistory] = useState(false);
-  const [unexplainedPrenatalLoss, setUnexplainedPrenatalLoss] = useState(false);
-  const [largeChild, setLargeChild] = useState(false);
-  const [pcos, setPcos] = useState(false);
-  const [sedentaryLifestyle, setSedentaryLifestyle] = useState(false);
-  const [prediabetes, setPrediabetes] = useState(false);
+  const [familyHistory, setFamilyHistory] = useState<boolean | null>(null);
+  const [unexplainedPrenatalLoss, setUnexplainedPrenatalLoss] = useState<boolean | null>(null);
+  const [sedentaryLifestyle, setSedentaryLifestyle] = useState<boolean | null>(null);
 
   // Doctor fields
   const [medicalLicense, setMedicalLicense] = useState('');
@@ -82,6 +87,7 @@ export default function RegisterScreen() {
   const [doctorSearch, setDoctorSearch] = useState('');
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
   const [loadingDoctors, setLoadingDoctors] = useState(false);
+  const [doctorLoadError, setDoctorLoadError] = useState('');
 
   const [error, setError] = useState('');
   // Date picker state for LMP
@@ -94,14 +100,18 @@ export default function RegisterScreen() {
 
   const fetchDoctors = useCallback(async () => {
     setLoadingDoctors(true);
+    setDoctorLoadError('');
     try {
       const res = await api.getRegisteredDoctors();
       if (res.success) {
         setDoctors(res.doctors);
         setFilteredDoctors(res.doctors);
+      } else {
+        setDoctorLoadError('Could not load the doctor list. Please try again.');
       }
-    } catch {
-      Alert.alert('Error', 'Could not load doctors list. Please try again.');
+    } catch (err) {
+      console.error('[register] Failed to load approved doctors:', err);
+      setDoctorLoadError('Could not load the doctor list. Check your connection and try again.');
     } finally {
       setLoadingDoctors(false);
     }
@@ -139,20 +149,20 @@ export default function RegisterScreen() {
       setError('Password must be at least 6 characters.');
       return false;
     }
-    if (activeRole === 'mother' && (!age || !bloodGroup || !lmpDate || !gravida)) {
+    if (activeRole === 'mother' && (!age.trim() || !bloodGroup || !lmpDate || !gravida.trim())) {
       setError('Please fill in all pregnancy details.');
       return false;
     }
-    if (activeRole === 'mother' && (!Number.isFinite(Number(age)) || Number(age) <= 0)) {
-      setError('Enter a valid age to create your maternal profile.');
+    if (activeRole === 'mother' && (!Number.isInteger(Number(age)) || Number(age) < 10 || Number(age) > 70)) {
+      setError('වයස අවුරුදු 10ත් 70ත් අතර පූර්ණ සංඛ්‍යාවක් ඇතුළත් කරන්න. / Enter an age from 10 to 70 as a whole number.');
       return false;
     }
-    if (activeRole === 'mother' && (!Number.isFinite(Number(gravida)) || Number(gravida) < 1)) {
-      setError('Enter a valid pregnancy count.');
+    if (activeRole === 'mother' && (!Number.isInteger(Number(gravida)) || Number(gravida) < 1 || Number(gravida) > 25)) {
+      setError('ගැබ් ගැනීම් ගණන 1ත් 25ත් අතර පූර්ණ සංඛ්‍යාවක් විය යුතුය. / Enter a whole number of pregnancies from 1 to 25.');
       return false;
     }
-    if (activeRole === 'mother' && bmi.trim() && (!Number.isFinite(Number(bmi)) || Number(bmi) <= 0)) {
-      setError('BMI must be a positive number when provided.');
+    if (activeRole === 'mother' && (familyHistory === null || unexplainedPrenatalLoss === null || sedentaryLifestyle === null)) {
+      setError('කරුණාකර ප්‍රශ්න තුනටම ඔව් හෝ නැහැ තෝරන්න. / Please answer all three questions with Yes or No.');
       return false;
     }
     if (activeRole === 'doctor' && (!medicalLicense.trim() || !specialty.trim() || !hospital.trim())) {
@@ -180,19 +190,9 @@ export default function RegisterScreen() {
         const now = new Date();
         const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
         payload.gestationalWeek = String(Math.max(0, Math.floor((todayUtc - lmpUtc) / (7 * 24 * 60 * 60 * 1000))));
-        payload.gestationInPreviousPregnancy = gestationInPrevious;
-        payload.bmi = bmi;
-        payload.hdl = hdl;
-        payload.sysBp = sysBp;
-        payload.diaBp = diaBp;
-        payload.ogtt = ogtt;
-        payload.hemoglobin = hemoglobin;
         payload.familyHistory = familyHistory;
         payload.unexplainedPrenatalLoss = unexplainedPrenatalLoss;
-        payload.largeChildOrBirthDefault = largeChild;
-        payload.pcos = pcos;
         payload.sedentaryLifestyle = sedentaryLifestyle;
-        payload.prediabetes = prediabetes;
       } else {
         payload.medicalLicense = medicalLicense; payload.specialty = specialty; payload.hospital = hospital;
       }
@@ -307,29 +307,25 @@ export default function RegisterScreen() {
                 </View>
               ) : null}
 
-              <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1">Personal Information</Text>
+              <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1">{activeRole === 'mother' ? 'පුද්ගලික තොරතුරු / Personal Information' : 'Personal Information'}</Text>
               <View className="h-px bg-slate-100 mb-4" />
 
               {[
-                { icon: <User color="#94A3B8" size={18} />, placeholder: activeRole === 'doctor' ? 'Full Name (e.g. Dr. Jane Doe)' : 'Full Name', value: fullName, setter: setFullName, type: 'default' as const },
-                { icon: <Mail color="#94A3B8" size={18} />, placeholder: 'Email Address', value: email, setter: setEmail, type: 'email-address' as const },
-                { icon: <Phone color="#94A3B8" size={18} />, placeholder: 'Phone Number', value: phone, setter: setPhone, type: 'phone-pad' as const },
+                { icon: <User color="#94A3B8" size={18} />, label: 'සම්පූර්ණ නම / Full Name', placeholder: activeRole === 'doctor' ? 'Full Name (e.g. Dr. Jane Doe)' : 'Full Name', value: fullName, setter: setFullName, type: 'default' as const },
+                { icon: <Mail color="#94A3B8" size={18} />, label: 'විද්‍යුත් තැපැල් ලිපිනය / Email Address', placeholder: 'Email Address', value: email, setter: setEmail, type: 'email-address' as const },
+                { icon: <Phone color="#94A3B8" size={18} />, label: 'දුරකථන අංකය / Phone Number', placeholder: 'Phone Number', value: phone, setter: setPhone, type: 'phone-pad' as const },
               ].map((field, i) => (
-                <View key={i} className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-3 border border-slate-200">
-                  {field.icon}
-                  <TextInput
-                    className="flex-1 ml-3 text-slate-800 text-sm"
-                    placeholder={field.placeholder}
-                    placeholderTextColor="#CBD5E1"
-                    keyboardType={field.type}
-                    autoCapitalize={field.type === 'email-address' ? 'none' : 'words'}
-                    value={field.value}
-                    onChangeText={field.setter}
-                  />
+                <View key={i} className="mb-3">
+                  {activeRole === 'mother' && <Text className="text-slate-600 text-sm font-semibold mb-2">{field.label}</Text>}
+                  <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
+                    {field.icon}
+                    <TextInput className="flex-1 ml-3 text-slate-800 text-sm" placeholder={field.placeholder} placeholderTextColor="#CBD5E1" keyboardType={field.type} autoCapitalize={field.type === 'email-address' ? 'none' : 'words'} value={field.value} onChangeText={field.setter} accessibilityLabel={activeRole === 'mother' ? field.label : field.placeholder} />
+                  </View>
                 </View>
               ))}
 
               {/* Password */}
+              {activeRole === 'mother' && <Text className="text-slate-600 text-sm font-semibold mb-2">මුරපදය / Password</Text>}
               <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-5 border border-slate-200">
                 <Lock color="#94A3B8" size={18} />
                 <TextInput
@@ -349,178 +345,30 @@ export default function RegisterScreen() {
               {/* Mother-specific fields */}
               {activeRole === 'mother' && (
                 <>
-                  <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1 mt-1">Pregnancy Profile</Text>
+                  <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1 mt-1">Pregnancy Profile / ගර්භණී තොරතුරු</Text>
                   <View className="h-px bg-slate-100 mb-4" />
 
-                  <View className="flex-row gap-3 mb-3">
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <User color="#94A3B8" size={16} />
-                      <TextInput className="flex-1 ml-2 text-slate-800 text-sm" placeholder="Age" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={age} onChangeText={setAge} />
-                    </View>
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <Hash color="#94A3B8" size={16} />
-                      <TextInput className="flex-1 ml-2 text-slate-800 text-sm" placeholder="Gravida" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={gravida} onChangeText={setGravida} />
-                    </View>
-                  </View>
+                  <Text className="text-slate-600 text-sm font-semibold mb-2">වයස / Age</Text>
+                  <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-4 border border-slate-200"><User color="#94A3B8" size={16} /><TextInput className="flex-1 ml-2 text-slate-800 text-sm" placeholder="වයස අවුරුදු / Age in years" placeholderTextColor="#CBD5E1" keyboardType="number-pad" value={age} onChangeText={setAge} accessibilityLabel="වයස / Age" /></View>
 
-                  {/* Blood Group Selector */}
-                  <Text className="text-slate-500 text-xs mb-2 ml-1">Blood Group</Text>
-                  <View className="flex-row flex-wrap gap-2 mb-3">
-                    {BLOOD_GROUPS.map((bg) => (
-                      <TouchableOpacity
-                        key={bg}
-                        onPress={() => setBloodGroup(bg)}
-                        className="px-4 py-2 rounded-full border"
-                        style={{
-                          backgroundColor: bloodGroup === bg ? '#15803D' : '#F8FAFC',
-                          borderColor: bloodGroup === bg ? '#15803D' : '#E2E8F0',
-                        }}
-                      >
-                        <Text className="text-sm font-bold" style={{ color: bloodGroup === bg ? '#fff' : '#64748B' }}>{bg}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <Text className="text-slate-600 text-sm font-semibold mb-1">ගැබ් ගැනීම් ගණන / Number of Pregnancies</Text>
+                  <Text className="text-slate-500 text-xs mb-2">වත්මන් ගැබ් ගැනීමත් ගණන් කරන්න; මෙය දරුවන් ගණන නොවේ. / Include this pregnancy; this is not the number of children.</Text>
+                  <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-4 border border-slate-200"><Hash color="#94A3B8" size={16} /><TextInput className="flex-1 ml-2 text-slate-800 text-sm" placeholder="ගැබ් ගැනීම් ගණන / Pregnancy count" placeholderTextColor="#CBD5E1" keyboardType="number-pad" value={gravida} onChangeText={setGravida} accessibilityLabel="ගැබ් ගැනීම් ගණන / Number of Pregnancies" /></View>
 
-                  {/* LMP Date Picker — calendar, not text input */}
-                  <TouchableOpacity
-                    onPress={() => setShowDatePicker(true)}
-                    className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-5 border border-slate-200"
-                    activeOpacity={0.7}
-                  >
-                    <Calendar color={lmpDate ? '#15803D' : '#94A3B8'} size={18} />
-                    <Text className="flex-1 ml-3 text-sm" style={{ color: lmpDate ? '#1E293B' : '#CBD5E1' }}>
-                      {lmpDate ? `Last Menstrual Period: ${lmpDate}` : 'Tap to select Last Menstrual Period'}
-                    </Text>
-                  </TouchableOpacity>
+                  <Text className="text-slate-600 text-sm font-semibold mb-2">රුධිර කාණ්ඩය / Blood Group</Text>
+                  <View className="flex-row flex-wrap gap-2 mb-4">{BLOOD_GROUPS.map((bg) => <TouchableOpacity key={bg} accessibilityRole="radio" accessibilityState={{ checked: bloodGroup === bg }} onPress={() => setBloodGroup(bg)} className="px-4 py-2 rounded-full border" style={{ backgroundColor: bloodGroup === bg ? '#15803D' : '#F8FAFC', borderColor: bloodGroup === bg ? '#15803D' : '#E2E8F0' }}><Text className="text-sm font-bold" style={{ color: bloodGroup === bg ? '#fff' : '#64748B' }}>{bg}</Text></TouchableOpacity>)}</View>
 
-                  {/* Date Picker (Web custom modal, iOS modal with spinner, Android native dialog) */}
-                  {showDatePicker && (
-                    Platform.OS === 'web' ? (
-                      <DatePickerModal
-                        visible={showDatePicker}
-                        value={lmpDateObj}
-                        maximumDate={new Date()}
-                        minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)}
-                        onConfirm={(selected: Date) => {
-                          setLmpDateObj(selected);
-                          const yyyy = selected.getFullYear();
-                          const mm = String(selected.getMonth() + 1).padStart(2, '0');
-                          const dd = String(selected.getDate()).padStart(2, '0');
-                          setLmpDate(`${yyyy}-${mm}-${dd}`);
-                          setShowDatePicker(false);
-                        }}
-                        onCancel={() => setShowDatePicker(false)}
-                      />
-                    ) : Platform.OS === 'ios' ? (
-                      <Modal transparent animationType="slide">
-                        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-                          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>
-                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 12, textAlign: 'center' }}>
-                              Select Last Menstrual Period
-                            </Text>
-                            <DateTimePicker
-                              value={lmpDateObj}
-                              mode="date"
-                              display="spinner"
-                              maximumDate={new Date()}
-                              minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)}
-                              onChange={(_: any, selected?: Date) => {
-                                if (selected) {
-                                  setLmpDateObj(selected);
-                                  const yyyy = selected.getFullYear();
-                                  const mm = String(selected.getMonth() + 1).padStart(2, '0');
-                                  const dd = String(selected.getDate()).padStart(2, '0');
-                                  setLmpDate(`${yyyy}-${mm}-${dd}`);
-                                }
-                              }}
-                            />
-                            <TouchableOpacity
-                              onPress={() => setShowDatePicker(false)}
-                              style={{ backgroundColor: '#15803D', borderRadius: 14, padding: 14, marginTop: 8 }}
-                            >
-                              <Text style={{ color: '#fff', fontWeight: 'bold', textAlign: 'center' }}>Confirm</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </Modal>
-                    ) : (
-                      <DateTimePicker
-                        value={lmpDateObj}
-                        mode="date"
-                        display="calendar"
-                        maximumDate={new Date()}
-                        minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)}
-                        onChange={(_: any, selected?: Date) => {
-                          setShowDatePicker(false);
-                          if (selected) {
-                            setLmpDateObj(selected);
-                            const yyyy = selected.getFullYear();
-                            const mm = String(selected.getMonth() + 1).padStart(2, '0');
-                            const dd = String(selected.getDate()).padStart(2, '0');
-                            setLmpDate(`${yyyy}-${mm}-${dd}`);
-                          }
-                        }}
-                      />
-                    )
-                  )}
+                  <Text className="text-slate-600 text-sm font-semibold mb-2">අවසන් මාසික වාරය ආරම්භ වූ දිනය / Last Menstrual Period</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(true)} className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-4 border border-slate-200" activeOpacity={0.7}><Calendar color={lmpDate ? '#15803D' : '#94A3B8'} size={18} /><Text className="flex-1 ml-3 text-sm" style={{ color: lmpDate ? '#1E293B' : '#CBD5E1' }}>{lmpDate || 'දිනය තෝරන්න / Select date'}</Text></TouchableOpacity>
 
-                  <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1 mt-4">Vitals & Measurements</Text>
+                  {showDatePicker && (Platform.OS === 'web' ? <DatePickerModal visible={showDatePicker} value={lmpDateObj} maximumDate={new Date()} minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)} onConfirm={(selected: Date) => { setLmpDateObj(selected); const yyyy = selected.getFullYear(); const mm = String(selected.getMonth() + 1).padStart(2, '0'); const dd = String(selected.getDate()).padStart(2, '0'); setLmpDate(`${yyyy}-${mm}-${dd}`); setShowDatePicker(false); }} onCancel={() => setShowDatePicker(false)} /> : Platform.OS === 'ios' ? <Modal transparent animationType="slide"><View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}><View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 12, textAlign: 'center' }}>අවසන් මාසික වාරය / Last Menstrual Period</Text><DateTimePicker value={lmpDateObj} mode="date" display="spinner" maximumDate={new Date()} minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)} onChange={(_: any, selected?: Date) => { if (selected) { setLmpDateObj(selected); const yyyy = selected.getFullYear(); const mm = String(selected.getMonth() + 1).padStart(2, '0'); const dd = String(selected.getDate()).padStart(2, '0'); setLmpDate(`${yyyy}-${mm}-${dd}`); } }} /><TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ backgroundColor: '#15803D', borderRadius: 14, padding: 14, marginTop: 8 }}><Text style={{ color: '#fff', fontWeight: 'bold', textAlign: 'center' }}>තහවුරු කරන්න / Confirm</Text></TouchableOpacity></View></View></Modal> : <DateTimePicker value={lmpDateObj} mode="date" display="calendar" maximumDate={new Date()} minimumDate={new Date(Date.now() - 1000 * 60 * 60 * 24 * 290)} onChange={(_: any, selected?: Date) => { setShowDatePicker(false); if (selected) { setLmpDateObj(selected); const yyyy = selected.getFullYear(); const mm = String(selected.getMonth() + 1).padStart(2, '0'); const dd = String(selected.getDate()).padStart(2, '0'); setLmpDate(`${yyyy}-${mm}-${dd}`); } }} />)}
+
+                  <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1 mt-4">GDM Information / GDM තොරතුරු</Text>
                   <View className="h-px bg-slate-100 mb-4" />
-                  
-                  <View className="flex-row gap-3 mb-3">
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <TextInput className="flex-1 text-slate-800 text-sm" placeholder="BMI" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={bmi} onChangeText={setBmi} />
-                    </View>
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <TextInput className="flex-1 text-slate-800 text-sm" placeholder="Prev Gestation (wks)" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={gestationInPrevious} onChangeText={setGestationInPrevious} />
-                    </View>
-                  </View>
-
-                  <View className="flex-row gap-3 mb-3">
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <TextInput className="flex-1 text-slate-800 text-sm" placeholder="Sys BP (mmHg)" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={sysBp} onChangeText={setSysBp} />
-                    </View>
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <TextInput className="flex-1 text-slate-800 text-sm" placeholder="Dia BP (mmHg)" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={diaBp} onChangeText={setDiaBp} />
-                    </View>
-                  </View>
-
-                  <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1 mt-4">Lab Results</Text>
-                  <View className="h-px bg-slate-100 mb-4" />
-                  
-                  <View className="flex-row gap-3 mb-3">
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <TextInput className="flex-1 text-slate-800 text-sm" placeholder="HDL (mg/dL)" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={hdl} onChangeText={setHdl} />
-                    </View>
-                    <View className="flex-1 flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 border border-slate-200">
-                      <TextInput className="flex-1 text-slate-800 text-sm" placeholder="Hemoglobin" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={hemoglobin} onChangeText={setHemoglobin} />
-                    </View>
-                  </View>
-
-                  <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-5 border border-slate-200">
-                    <TextInput className="flex-1 text-slate-800 text-sm" placeholder="OGTT Result (mg/dL)" placeholderTextColor="#CBD5E1" keyboardType="numeric" value={ogtt} onChangeText={setOgtt} />
-                  </View>
-
-                  <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1 mt-2">Medical History & Factors</Text>
-                  <View className="h-px bg-slate-100 mb-4" />
-                  
-                  <View className="bg-slate-50 rounded-[14px] px-4 py-3 border border-slate-200 mb-5">
-                    {[
-                      { label: 'Family History of Diabetes', val: familyHistory, set: setFamilyHistory },
-                      { label: 'Unexplained Prenatal Loss', val: unexplainedPrenatalLoss, set: setUnexplainedPrenatalLoss },
-                      { label: 'Large Child or Birth Defect', val: largeChild, set: setLargeChild },
-                      { label: 'PCOS (Polycystic Ovary Syndrome)', val: pcos, set: setPcos },
-                      { label: 'Sedentary Lifestyle', val: sedentaryLifestyle, set: setSedentaryLifestyle },
-                      { label: 'Prediabetes History', val: prediabetes, set: setPrediabetes }
-                    ].map((item, idx) => (
-                      <TouchableOpacity key={idx} onPress={() => item.set(!item.val)} className="flex-row items-center py-2.5">
-                        <View className={`w-5 h-5 rounded border items-center justify-center mr-3 ${item.val ? 'bg-[#15803D] border-[#15803D]' : 'border-slate-300'}`}>
-                          {item.val && <CheckCircle color="#fff" size={12} />}
-                        </View>
-                        <Text className="text-slate-700 text-sm">{item.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <Text className="text-slate-600 text-sm font-semibold mb-1">පවුලේ දියවැඩියා ඉතිහාසයක් තිබේද? / Family History of Diabetes</Text><GdmYesNoChoice value={familyHistory} onChange={setFamilyHistory} />
+                  <Text className="text-slate-600 text-sm font-semibold mb-1">පැහැදිලි හේතුවක් නොමැතිව පෙර ගර්භයක් අහිමි වී තිබේද? / Unexplained Prenatal Loss</Text><GdmYesNoChoice value={unexplainedPrenatalLoss} onChange={setUnexplainedPrenatalLoss} />
+                  <Text className="text-slate-600 text-sm font-semibold mb-1">ඔබගේ දෛනික ජීවන රටාවෙහි ශාරීරික ක්‍රියාකාරකම් අඩුද? / Sedentary Lifestyle</Text>
+                  <Text className="text-slate-500 text-xs mb-2">බොහෝ වේලාවක් වාඩි වී සිටීම සහ නිතිපතා ක්‍රියාකාරකම් අඩුවීම සලකා බලන්න. / Think about sitting most of the day with little regular activity.</Text><GdmYesNoChoice value={sedentaryLifestyle} onChange={setSedentaryLifestyle} />
                 </>
               )}
 
@@ -596,12 +444,24 @@ export default function RegisterScreen() {
             <ActivityIndicator size="large" color="#15803D" />
             <Text className="text-slate-400 mt-3">Loading available doctors...</Text>
           </View>
+        ) : doctorLoadError ? (
+          <View className="flex-1 items-center justify-center px-8">
+            <Text className="text-slate-600 font-bold text-center">Doctor list unavailable</Text>
+            <Text className="text-slate-400 text-sm text-center mt-2">{doctorLoadError}</Text>
+            <TouchableOpacity onPress={fetchDoctors} className="mt-5 rounded-xl bg-[#15803D] px-6 py-3">
+              <Text className="text-white font-semibold">Try again</Text>
+            </TouchableOpacity>
+          </View>
         ) : filteredDoctors.length === 0 ? (
           <View className="flex-1 items-center justify-center px-8">
             <Text className="text-4xl mb-3">👨‍⚕️</Text>
-            <Text className="text-slate-600 font-bold text-center">No doctors registered yet</Text>
+            <Text className="text-slate-600 font-bold text-center">
+              {doctors.length === 0 ? 'No doctors registered yet' : 'No matching doctors'}
+            </Text>
             <Text className="text-slate-400 text-sm text-center mt-2">
-              Ask your doctor to register on Maathru Care first, then you can select them here.
+              {doctors.length === 0
+                ? 'No doctor profiles are available yet. Please check again later or contact your care team.'
+                : 'Try another name, specialty or hospital.'}
             </Text>
           </View>
         ) : (

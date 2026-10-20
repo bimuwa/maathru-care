@@ -32,6 +32,13 @@ export interface GDMV4RiskResponse {
 
 export type MedicalHistoryChoice = 'yes' | 'no' | 'not_sure';
 
+/** Shared wire/database encoding for explicit GDM V4 Yes/No values. */
+export function toGdmV4Binary(value: boolean | MedicalHistoryChoice | null | undefined): 0 | 1 | null {
+  if (value === true || value === 'yes') return 1;
+  if (value === false || value === 'no') return 0;
+  return null;
+}
+
 export interface GDMV4FormState {
   age: string;
   no_of_pregnancy: string;

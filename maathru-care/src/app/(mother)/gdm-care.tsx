@@ -18,6 +18,7 @@ import { gdmCacheService, GDMCacheEntry } from '@/services/gdmCacheService';
 import { useAuth } from '@/context/AuthContext';
 import { GDMRiskResponse } from '@/types/gdm';
 import { GDMV4RiskResponse, GDMV4FormState, MedicalHistoryChoice } from '@/types/gdmV4';
+import { toGdmV4Binary } from '@/types/gdmV4';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -192,9 +193,9 @@ export default function WellnessScreen() {
       const res = await gdmV4ResearchService.predictScreening({
         age: parsedAge,
         no_of_pregnancy: parsedPregnancies,
-        family_history: v4Form.family_history === 'yes' ? 1 : 0,
-        unexplained_prenatal_loss: v4Form.unexplained_prenatal_loss === 'yes' ? 1 : 0,
-        sedentary_lifestyle: v4Form.sedentary_lifestyle === 'yes' ? 1 : 0,
+        family_history: toGdmV4Binary(v4Form.family_history)!,
+        unexplained_prenatal_loss: toGdmV4Binary(v4Form.unexplained_prenatal_loss)!,
+        sedentary_lifestyle: toGdmV4Binary(v4Form.sedentary_lifestyle)!,
       });
 
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -423,9 +424,9 @@ export default function WellnessScreen() {
 
                   <View style={s.v4ScoreCard}>
                     <Text style={s.v4ScoreLabel}>Experimental Algorithmic Score</Text>
-                    <Text style={s.v4ScoreValue}>{v4Result.model_score.toFixed(4)}</Text>
+                    <Text style={s.v4ScoreValue}>{(v4Result.model_score * 100).toFixed(2)}%</Text>
                     <Text style={s.v4ScoreSubtext}>
-                      Research Threshold: {v4Result.threshold.toFixed(2)} • Positive if score ≥ {v4Result.threshold.toFixed(2)}
+                      Research Threshold: {(v4Result.threshold * 100).toFixed(0)}% • Positive if score ≥ {(v4Result.threshold * 100).toFixed(0)}%
                     </Text>
                   </View>
 
