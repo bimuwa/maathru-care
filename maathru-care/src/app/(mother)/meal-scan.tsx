@@ -208,7 +208,6 @@ export default function DetectScreen() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [customSearchWarning, setCustomSearchWarning] = useState<string | null>(null);
   const [showCustomFoods, setShowCustomFoods] = useState(false);
-  const [showVoiceUnavailable, setShowVoiceUnavailable] = useState(false);
 
   // Ignore stale responses when the query changes or the correction modal closes.
   useEffect(() => {
@@ -535,9 +534,6 @@ export default function DetectScreen() {
           <View style={{ paddingHorizontal: 16, gap: 8, marginTop: 8 }}>
             <TouchableOpacity accessibilityRole="button" onPress={() => setShowCustomFoods(true)} style={{ minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#FFFFFF', justifyContent: 'center', paddingHorizontal: 14 }}>
               <Text style={{ color: '#047857', fontWeight: '700' }}>My Foods · Add Custom Food</Text>
-            </TouchableOpacity>
-            <TouchableOpacity accessibilityRole="button" onPress={() => setShowVoiceUnavailable(true)} style={{ minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF', justifyContent: 'center', paddingHorizontal: 14 }}>
-              <Text style={{ color: '#334155', fontWeight: '700' }}>Analyze by Voice</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -986,16 +982,6 @@ export default function DetectScreen() {
       </Modal>
 
       <CustomFoodsModal visible={showCustomFoods} onClose={() => setShowCustomFoods(false)} onSelect={handleSelectCustomFood} />
-      <Modal visible={showVoiceUnavailable} transparent animationType="fade" onRequestClose={() => setShowVoiceUnavailable(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.35)', justifyContent: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20 }}>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 8 }}>Voice analysis is not configured yet</Text>
-            <Text style={{ color: '#475569', lineHeight: 22 }}>A secure authenticated speech service and its Google Speech-to-Text and Gemini credentials are not available in this app setup. You can still search for foods manually.</Text>
-            <TouchableOpacity accessibilityRole="button" onPress={() => setShowVoiceUnavailable(false)} style={{ minHeight: 46, marginTop: 14, backgroundColor: '#047857', borderRadius: 11, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Close</Text></TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
     </View>
     </KeyboardAvoidingView>
   );
