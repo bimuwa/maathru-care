@@ -5,7 +5,7 @@ import { deleteAsync } from "expo-file-system/legacy";
 import { colors, fonts } from "../theme";
 import { config } from "../config";
 import { WebCameraState } from "../vision/useWebCamera";
-import { detectAndCrop, type FaceFraction } from "../vision/nativeFace";
+import { detectAndCrop, faceDetectionAvailable, type FaceFraction } from "../vision/nativeFace";
 import { postFrameFile } from "../api/sessionApi";
 
 const W = 140;
@@ -39,7 +39,7 @@ export function CameraPreview({ visible, postingActive }: { state: WebCameraStat
   // Capture -> detect -> post loop. One frame at a time; the next starts only after the last
   // finished, at least config.ferSampleMs apart. Stops as soon as posting is paused or revoked.
   useEffect(() => {
-    if (!postingActive || !granted || !ready) return;
+    if (!postingActive || !granted || !ready || !faceDetectionAvailable) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -114,6 +114,7 @@ export function CameraPreview({ visible, postingActive }: { state: WebCameraStat
         : <View style={styles.message}><Text style={styles.messageText}>{permission && !permission.canAskAgain ? "Camera access is off for this app in Settings." : "Waiting for camera permission…"}</Text></View>}
       {visible && boxStyle && <View style={[styles.faceBox, boxStyle]} pointerEvents="none" />}
       {visible && granted && <View style={styles.dot} />}
+      {visible && granted && !faceDetectionAvailable && <Text style={styles.note}>Camera mood needs the app build, not Expo Go.</Text>}
     </Animated.View>
   );
 }
@@ -125,5 +126,6 @@ const styles = StyleSheet.create({
   message: { flex: 1, alignItems: "center", justifyContent: "center", padding: 10, backgroundColor: colors.card },
   messageText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, textAlign: "center" },
   dot: { position: "absolute", left: 8, top: 8, width: 9, height: 9, borderRadius: 5, backgroundColor: "#3FBF6A" },
-  faceBox: { position: "absolute", borderWidth: 2, borderColor: "#3FBF6A", borderRadius: 6 }
+  faceBox: { position: "absolute", borderWidth: 2, borderColor: "#3FBF6A", borderRadius: 6 },
+  note: { position: "absolute", left: 0, right: 0, bottom: 0, padding: 6, backgroundColor: "rgba(0,0,0,.55)", color: colors.white, fontFamily: fonts.regular, fontSize: 10, textAlign: "center" }
 });

@@ -3,8 +3,12 @@
 // on the device (a native module, so this needs the development build, not Expo Go); only the
 // JPEG face crop leaves the phone.
 import FaceDetection from "@react-native-ml-kit/face-detection";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { config } from "../config";
+
+/** False in Expo Go, which does not include ML Kit: camera mood needs the development build. */
+export const faceDetectionAvailable = Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
 
 export type Photo = { uri: string; width: number; height: number };
 /** Face box as fractions (0-1) of the photo, for drawing on the preview. */
