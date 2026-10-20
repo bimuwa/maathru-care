@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
+import { PressableBox as Pressable } from "./PressableBox";
 import { colors, fonts, type } from "../theme";
 
 // Small, link-weight affordance appended to an assistant message when that

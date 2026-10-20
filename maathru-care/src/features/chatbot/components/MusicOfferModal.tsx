@@ -1,4 +1,5 @@
-import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Modal, Platform, StyleSheet, Text, View } from "react-native";
+import { PressableBox as Pressable } from "./PressableBox";
 import { BlurView } from "expo-blur";
 import { MusicOffer, MusicSong } from "../api/contracts";
 import { colors, fonts, spacing, type } from "../theme";

@@ -1,3 +1,4 @@
+import { FileSystemUploadType, uploadAsync } from "expo-file-system/legacy";
 import { config } from "../config";
 import { sessionId } from "../session";
 import { useAppStore } from "../store";
@@ -63,6 +64,35 @@ export async function revokeCamera(): Promise<void> {
 // operation, not an error. Network failures are swallowed for the same
 // reason -- there is nothing to surface to the user.
 export function postFrame(blob: Blob): void {
+  const form = new FormData();
+  form.append("image", blob, "frame.jpg");
+  sendFrame(form);
+}
+
+// Native: the face crop is a local JPEG file. Expo's fetch does not take React Native's
+// { uri } FormData parts, so it is uploaded as the same multipart "image" field by the
+// file system module. Resolves once the upload has finished (never rejects), so the caller
+// can delete the file.
+export function postFrameFile(uri: string): Promise<void> {
+  if (config.apiMode === "mock") return Promise.resolve();
+  let headers: Record<string, string>;
+  try {
+    headers = authHeaders();
+  } catch {
+    return Promise.resolve();
+  }
+  return uploadAsync(`${config.apiBaseUrl}/api/v1/session/frame`, uri, {
+    httpMethod: "POST",
+    uploadType: FileSystemUploadType.MULTIPART,
+    fieldName: "image",
+    mimeType: "image/jpeg",
+    headers
+  })
+    .then(res => { if (res.status === 409 || res.status === 403) resyncCamera(res.status); })
+    .catch(() => {});
+}
+
+function sendFrame(form: FormData): void {
   if (config.apiMode === "mock") return;
   let headers: Record<string, string>;
   try {
@@ -70,8 +100,6 @@ export function postFrame(blob: Blob): void {
   } catch {
     return;
   }
-  const form = new FormData();
-  form.append("image", blob, "frame.jpg");
   fetch(`${config.apiBaseUrl}/api/v1/session/frame`, { method: "POST", headers, body: form })
     .then(res => { if (res.status === 409 || res.status === 403) resyncCamera(res.status); })
     .catch(() => {});

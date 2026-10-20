@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, BackHandler, findNodeHandle, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, BackHandler, findNodeHandle, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { PressableBox as Pressable } from "./components/PressableBox";
 import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -38,6 +40,8 @@ export function ChatbotScreen() {
   return <Chat />;
 }
 function Chat() {
+  // Keep the header below the phone's status bar (0 on web).
+  const insets = useSafeAreaInsets();
   const userId = useAuth().user?.id ?? null;
   const { language, messages, addMessage, newChat, cameraEnabled, cameraPaused, sentimentEnabled, setSentimentEnabled, consentSeen, setConsentSeen, consentAccepted, conversationId, authenticated, authError } = useAppStore();
   const [draft, setDraft] = useState("");
@@ -259,7 +263,7 @@ function Chat() {
     }
   }
   return <KeyboardAvoidingView style={[styles.page, Platform.OS === "web" && styles.pageWeb]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <View style={styles.headerBar}>
+    <View style={[styles.headerBar, { height: 72 + insets.top, paddingTop: insets.top }]}>
       <View style={styles.headerActions}>
       <Pressable accessibilityRole="button" accessibilityLabel="Menu" onPress={() => setShowDrawer(true)} style={({ pressed }) => [styles.newChatButton, pressed && styles.newChatButtonPressed]}><View style={styles.menuIcon}><View style={styles.menuIconLong} /><View style={styles.menuIconShort} /></View></Pressable>
       </View>
@@ -273,7 +277,7 @@ function Chat() {
       activeId={conversationId}
       footer={<>
         <SettingRow icon="videocam-outline" label="Camera" value={cameraEnabled} onToggle={onCameraToggle} />
-        {Platform.OS === "web" && <SettingRow icon="eye-outline" label="Preview" value={cameraEnabled && showPreview} disabled={!cameraEnabled} onToggle={() => setShowPreview(v => !v)} />}
+        <SettingRow icon="eye-outline" label="Preview" value={cameraEnabled && showPreview} disabled={!cameraEnabled} onToggle={() => setShowPreview(v => !v)} />
         <SettingRow icon="chatbubble-ellipses-outline" label="Text mood" value={sentimentEnabled} onToggle={onSentimentToggle} />
         <View style={styles.footerDivider} />
         <Pressable accessibilityRole="button" accessibilityLabel="Info" onPress={() => { setShowDrawer(false); setShowInfo(true); }} style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
@@ -293,7 +297,7 @@ function Chat() {
       {config.apiMode !== "mock" && !authenticated && authError && <View style={styles.error}><Text style={styles.errorText}>{authError}</Text></View>}
     </Screen>
     <CameraPreview state={camera.state} stream={camera.stream} visible={showPreview && cameraEnabled} postingActive={cameraEnabled && !cameraPaused} />
-    <Animated.View style={[styles.composerDock, { transform: [{ translateY }] }]}>
+    <Animated.View style={[styles.composerDock, { paddingBottom: 16 + insets.bottom, transform: [{ translateY }] }]}>
       <View ref={composerRef} style={[styles.composer, multiline && styles.composerMultiline]} onLayout={e => { const w = e.nativeEvent.layout.width; if (w > 150) setComposerW(w); }}>
         <TextInput
           multiline
@@ -306,7 +310,12 @@ function Chat() {
           placeholderTextColor="#B59EA7"
           blurOnSubmit={false}
           scrollEnabled={atCap}
-          style={[styles.input, compact && styles.inputCompact, { height: textHeight, lineHeight: effectiveLineHeight, paddingRight: multiline ? 14 : 52 }]}
+          style={[
+            styles.input, compact && styles.inputCompact,
+            { height: textHeight, lineHeight: effectiveLineHeight, paddingRight: multiline ? 14 : 52 },
+            // Native draws text at the top of a tall line box, so centre one line in the box instead.
+            Platform.OS !== "web" && singleLine && { lineHeight: lineHeight, textAlignVertical: "center" },
+          ]}
         />
         <Pressable accessibilityRole="button" accessibilityLabel={i18n.t("send")} onPress={send} style={styles.send}><Ionicons name="search" size={20} color={colors.white} /></Pressable>
       </View>

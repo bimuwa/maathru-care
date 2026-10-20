@@ -1,6 +1,8 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Animated, Easing, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { PressableBox as Pressable } from "./PressableBox";
 import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Rect } from "react-native-svg";
 import { colors, fonts, spacing } from "../theme";
 import { ConversationSummary, listConversations } from "../api/client";
@@ -49,6 +51,8 @@ function formatWhen(iso: string): string {
 // covers exactly the chat screen, top to bottom.
 export function ChatDrawer({ open, onClose, onNewChat, onOpenChat, activeId, footer }: Props) {
   const { width } = useWindowDimensions();
+  // Keep the panel's top and bottom clear of the phone's status and navigation bars (0 on web).
+  const insets = useSafeAreaInsets();
   const panelWidth = Math.round(width * 0.65);
   const progress = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(open);
@@ -87,7 +91,7 @@ export function ChatDrawer({ open, onClose, onNewChat, onOpenChat, activeId, foo
         <View style={styles.scrim} />
         <Pressable accessibilityRole="button" accessibilityLabel="Close chats panel" onPress={onClose} style={StyleSheet.absoluteFill} />
       </Animated.View>
-      <Animated.View accessibilityViewIsModal style={[styles.panel, { width: panelWidth, transform: [{ translateX }] }]}>
+      <Animated.View accessibilityViewIsModal style={[styles.panel, { width: panelWidth, paddingTop: 12 + insets.top, paddingBottom: spacing.sm + insets.bottom, transform: [{ translateX }] }]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close sidebar" onPress={onClose} style={({ pressed }) => [styles.navItem, pressed && styles.navItemPressed]}>
           {({ pressed }) => <><SidebarIcon color={pressed ? colors.deepPink : colors.muted} /><Text style={[styles.navText, pressed && styles.navTextPressed]}>Sidebar</Text></>}
         </Pressable>
