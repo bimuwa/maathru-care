@@ -156,3 +156,5 @@ maathru_care/
 ## 📄 License & Acknowledgments
 - Distributed under the MIT License. See `LICENSE` for more information.
 - Special thanks to our supervisors and the open-source community for their invaluable tools and resources.
+- Implementation notes for custom food labels and voice analysis: [docs/CUSTOM_FOODS_AND_VOICE_ANALYSIS.md](docs/CUSTOM_FOODS_AND_VOICE_ANALYSIS.md).
+

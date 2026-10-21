@@ -86,7 +86,6 @@ router.post('/predict', async (req: Request, res: Response): Promise<void> => {
           gestational_age: validated.gestationalAge,
           doctor_id: patient?.assigned_doctor_id,
           assessment_id: savedAssessment?.id,
-          risk_level: predictionResult.riskLevel === 'Very High' ? 'Very High' : 'High',
           probability: predictionResult.highRiskProbability > 1 ? predictionResult.highRiskProbability / 100 : predictionResult.highRiskProbability,
           alert_title: `${predictionResult.riskLevel} Maternal Risk Flagged (${(predictionResult.highRiskProbability > 1 ? predictionResult.highRiskProbability : predictionResult.highRiskProbability * 100).toFixed(1)}%)`,
           alert_message: predictionResult.summary,

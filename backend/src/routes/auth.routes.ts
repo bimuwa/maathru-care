@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../services/db.service.js';
+import { logger } from '../services/logger.service.js';
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
+      logger.warn('auth.login.rejected', { requestId: res.locals.requestId, reason: 'missing_credentials' });
       return res.status(400).json({ success: false, error: 'Email and password are required.' });
     }
 
@@ -46,16 +48,24 @@ router.post('/login', async (req: Request, res: Response) => {
       .eq('password', password)
       .maybeSingle();
 
-    if (error || !user) {
+    if (error) {
+      logger.error('auth.login.database_error', error, { requestId: res.locals.requestId });
+      return res.status(500).json({ success: false, error: 'Sign-in could not be completed.' });
+    }
+
+    if (!user) {
+      logger.warn('auth.login.rejected', { requestId: res.locals.requestId, reason: 'credentials_not_matched' });
       return res.status(401).json({ success: false, error: 'Invalid email or password.' });
     }
 
+    logger.info('auth.login.succeeded', { requestId: res.locals.requestId, role: user.role });
     return res.status(200).json({
       success: true,
       token: `demo-token-${user.id}-${Date.now()}`,
       user: mapUserToSafeUser(user),
     });
   } catch (err: any) {
+    logger.error('auth.login.error', err, { requestId: res.locals.requestId });
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -132,7 +142,6 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-
 
 // ─── GET /api/v1/auth/me ─────────────────────────────────────────────────────
 router.get('/me', async (req: Request, res: Response) => {
