@@ -17,7 +17,7 @@ import { DatePickerModal } from '../components/ui/DatePickerModal';
 import { useRouter } from 'expo-router';
 import {
   Mail, Lock, User, Phone, ArrowLeft, Calendar, Stethoscope,
-  Building2, Droplet, Hash, ChevronRight, CheckCircle, Search, Eye, EyeOff,
+  Building2, Droplet, Hash, ChevronRight, CheckCircle, Search, Eye, EyeOff, Scale,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { api, RegisterData } from '../services/api';
@@ -72,6 +72,7 @@ export default function RegisterScreen() {
   const [bloodGroup, setBloodGroup] = useState('');
   const [lmpDate, setLmpDate] = useState('');
   const [gravida, setGravida] = useState('');
+  const [bmi, setBmi] = useState('');
   const [familyHistory, setFamilyHistory] = useState<boolean | null>(null);
   const [unexplainedPrenatalLoss, setUnexplainedPrenatalLoss] = useState<boolean | null>(null);
   const [sedentaryLifestyle, setSedentaryLifestyle] = useState<boolean | null>(null);
@@ -149,8 +150,8 @@ export default function RegisterScreen() {
       setError('Password must be at least 6 characters.');
       return false;
     }
-    if (activeRole === 'mother' && (!age.trim() || !bloodGroup || !lmpDate || !gravida.trim())) {
-      setError('Please fill in all pregnancy details.');
+    if (activeRole === 'mother' && (!age.trim() || !bloodGroup || !lmpDate || !gravida.trim() || !bmi.trim())) {
+      setError('Please fill in all pregnancy details (including BMI).');
       return false;
     }
     if (activeRole === 'mother' && (!Number.isInteger(Number(age)) || Number(age) < 10 || Number(age) > 70)) {
@@ -159,6 +160,10 @@ export default function RegisterScreen() {
     }
     if (activeRole === 'mother' && (!Number.isInteger(Number(gravida)) || Number(gravida) < 1 || Number(gravida) > 25)) {
       setError('ගැබ් ගැනීම් ගණන 1ත් 25ත් අතර පූර්ණ සංඛ්‍යාවක් විය යුතුය. / Enter a whole number of pregnancies from 1 to 25.');
+      return false;
+    }
+    if (activeRole === 'mother' && (isNaN(Number(bmi)) || Number(bmi) < 10 || Number(bmi) > 60)) {
+      setError('BMI අගය 10ත් 60ත් අතර සංඛ්‍යාවක් විය යුතුය (උදා. 22.5). / Enter a valid BMI between 10 and 60 (e.g. 22.5).');
       return false;
     }
     if (activeRole === 'mother' && (familyHistory === null || unexplainedPrenatalLoss === null || sedentaryLifestyle === null)) {
@@ -185,6 +190,7 @@ export default function RegisterScreen() {
       if (activeRole === 'mother') {
         payload.age = age; payload.bloodGroup = bloodGroup;
         payload.lmpDate = lmpDate; payload.gravida = gravida;
+        payload.bmi = bmi.trim();
         const [lmpYear, lmpMonth, lmpDay] = lmpDate.split('-').map(Number);
         const lmpUtc = Date.UTC(lmpYear, lmpMonth - 1, lmpDay);
         const now = new Date();
@@ -357,6 +363,21 @@ export default function RegisterScreen() {
 
                   <Text className="text-slate-600 text-sm font-semibold mb-2">රුධිර කාණ්ඩය / Blood Group</Text>
                   <View className="flex-row flex-wrap gap-2 mb-4">{BLOOD_GROUPS.map((bg) => <TouchableOpacity key={bg} accessibilityRole="radio" accessibilityState={{ checked: bloodGroup === bg }} onPress={() => setBloodGroup(bg)} className="px-4 py-2 rounded-full border" style={{ backgroundColor: bloodGroup === bg ? '#15803D' : '#F8FAFC', borderColor: bloodGroup === bg ? '#15803D' : '#E2E8F0' }}><Text className="text-sm font-bold" style={{ color: bloodGroup === bg ? '#fff' : '#64748B' }}>{bg}</Text></TouchableOpacity>)}</View>
+
+                  <Text className="text-slate-600 text-sm font-semibold mb-1">ශරීර ස්කන්ධ දර්ශකය / Body Mass Index (BMI)</Text>
+                  <Text className="text-slate-500 text-xs mb-2">සාමාන්‍ය අගය 18.5 - 24.9 අතර වේ (උදා. 22.5) / Normal healthy range is 18.5 - 24.9 (e.g. 22.5)</Text>
+                  <View className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-4 border border-slate-200">
+                    <Scale color="#94A3B8" size={16} />
+                    <TextInput
+                      className="flex-1 ml-2 text-slate-800 text-sm"
+                      placeholder="BMI අගය / e.g. 22.5"
+                      placeholderTextColor="#CBD5E1"
+                      keyboardType="decimal-pad"
+                      value={bmi}
+                      onChangeText={setBmi}
+                      accessibilityLabel="ශරීර ස්කන්ධ දර්ශකය / Body Mass Index (BMI)"
+                    />
+                  </View>
 
                   <Text className="text-slate-600 text-sm font-semibold mb-2">අවසන් මාසික වාරය ආරම්භ වූ දිනය / Last Menstrual Period</Text>
                   <TouchableOpacity onPress={() => setShowDatePicker(true)} className="flex-row items-center bg-slate-50 rounded-[14px] px-4 py-3.5 mb-4 border border-slate-200" activeOpacity={0.7}><Calendar color={lmpDate ? '#15803D' : '#94A3B8'} size={18} /><Text className="flex-1 ml-3 text-sm" style={{ color: lmpDate ? '#1E293B' : '#CBD5E1' }}>{lmpDate || 'දිනය තෝරන්න / Select date'}</Text></TouchableOpacity>

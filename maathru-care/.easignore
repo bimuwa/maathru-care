@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+web-build/
+android/
+ios/
+.git/
+*.apk
+*.aab
+*.mp4
+*.mov
+*.zip
+*.tar.gz
+*.pt
+*.onnx
+*.tflite

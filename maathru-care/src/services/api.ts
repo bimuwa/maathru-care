@@ -27,6 +27,7 @@ export interface RegisterData {
   bloodGroup?: string;
   lmpDate?: string;
   gravida?: string;
+  bmi?: string;
   // Doctor fields
   medicalLicense?: string;
   specialty?: string;
@@ -300,19 +301,39 @@ class ApiService {
     const metadata: Record<string, unknown> = {
       maathru_care_signup: 'v1', role: data.role, full_name: fullName, phone: data.phone,
     };
-    if (data.role === 'mother') Object.assign(metadata, {
-      age: data.age ? Number(data.age) : null, blood_group: data.bloodGroup || null,
-      gestational_week: data.gestationalWeek ? Number(data.gestationalWeek) : null,
-      no_of_pregnancy: data.gravida ? Number(data.gravida) : null,
-      family_history: toGdmV4Binary(data.familyHistory),
-      unexplained_prenatal_loss: toGdmV4Binary(data.unexplainedPrenatalLoss),
-      sedentary_lifestyle: toGdmV4Binary(data.sedentaryLifestyle),
-    });
+    if (data.role === 'mother') {
+      Object.assign(metadata, {
+        age: data.age ? Number(data.age) : null, blood_group: data.bloodGroup || null,
+        gestational_week: data.gestationalWeek ? Number(data.gestationalWeek) : null,
+        no_of_pregnancy: data.gravida ? Number(data.gravida) : null,
+        family_history: toGdmV4Binary(data.familyHistory),
+        unexplained_prenatal_loss: toGdmV4Binary(data.unexplainedPrenatalLoss),
+        sedentary_lifestyle: toGdmV4Binary(data.sedentaryLifestyle),
+      });
+      if (data.bmi !== undefined && data.bmi !== null && data.bmi !== '') {
+        metadata.bmi = Number(data.bmi);
+      }
+    }
     else Object.assign(metadata, { medical_license: data.medicalLicense, specialty: data.specialty, hospital: data.hospital });
     const { data: auth, error } = await this.withTimeout(supabase.auth.signUp({
       email: data.email, password: data.password, options: { data: metadata },
     }), 'Registration');
-    if (error) throw error;
+    if (error) {
+      // Supabase returns 422 "User already registered" when the email exists in
+      // auth.users — even if the session was abandoned or email was never confirmed.
+      if (
+        error.message?.toLowerCase().includes('user already registered') ||
+        error.message?.toLowerCase().includes('already registered') ||
+        (error as any)?.status === 422
+      ) {
+        throw new Error(
+          'This email address is already registered.\n\n' +
+          'If you previously tried to sign up, check your inbox for a confirmation email and verify it first, then sign in.\n\n' +
+          'If you already have an account, please use the Sign In page instead.',
+        );
+      }
+      throw error;
+    }
     if (!auth.session || !auth.user) throw new Error('Check your email to verify your account. After verification, sign in to continue.');
     this.setAuthToken(auth.session.access_token);
     const { data: profile, error: profileError } = await this.withTimeout(supabase.from('users')
@@ -483,23 +504,38 @@ class ApiService {
       hospital: string; medicalLicense: string; phone: string;
     }>;
   }> {
-    const { data, error } = await supabase.rpc('get_approved_doctors');
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, full_name, specialty, hospital, medical_license, phone')
+        .eq('role', 'doctor')
+        .order('full_name', { ascending: true });
 
-    if (error) {
-      throw new Error(error.message);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return {
+        success: true,
+        doctors: (data || []).map((d: any) => ({
+          id: d.id,
+          fullName: d.full_name,
+          specialty: d.specialty || '',
+          hospital: d.hospital || '',
+          medicalLicense: d.medical_license || '',
+          phone: d.phone || ''
+        }))
+      };
+    } catch {
+      // Fallback to Express backend endpoint (which uses service role key)
+      return this.request<{
+        success: boolean;
+        doctors: Array<{
+          id: string; fullName: string; specialty: string;
+          hospital: string; medicalLicense: string; phone: string;
+        }>;
+      }>('/approval/doctors');
     }
-
-    return {
-      success: true,
-      doctors: (data || []).map((d: any) => ({
-        id: d.id,
-        fullName: d.full_name,
-        specialty: d.specialty || '',
-        hospital: d.hospital || '',
-        medicalLicense: d.medical_license || '',
-        phone: d.phone || ''
-      }))
-    };
   }
 
   public async submitApprovalRequest(data: {
@@ -507,10 +543,15 @@ class ApiService {
     patientBloodGroup: string; patientGestationalWeeks: number;
     patientPhone: string; patientEmail: string; doctorId: string;
   }): Promise<{ success: boolean; request: any }> {
-    const { error } = await supabase.rpc('request_doctor_assignment', { p_doctor_id: data.doctorId });
-    if (error) throw new Error(error.message);
-
-    return { success: true, request: { status: 'pending' } };
+    // Use the backend REST endpoint instead of the Supabase RPC so this works
+    // even before the request_doctor_assignment DB function is deployed.
+    return this.request<{ success: boolean; request: any }>('/approval/request', {
+      method: 'POST',
+      body: JSON.stringify({
+        patientId: data.patientId,
+        doctorId: data.doctorId,
+      }),
+    });
   }
 
   public async checkApprovalStatus(patientId: string): Promise<{

@@ -12,3 +12,5 @@ npm-debug.*
 *.orig.*
 .DS_Store
 bin/
+*.apk
+*.aab

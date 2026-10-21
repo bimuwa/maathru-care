@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
-  StyleSheet, LayoutAnimation, Platform, UIManager, TextInput
+  StyleSheet, LayoutAnimation, Platform, UIManager, TextInput, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
   HeartPulse, Calendar, AlertCircle, CheckCircle2,
   ShieldAlert, RefreshCw, Zap, Activity, Info, Check, TrendingUp,
-  Camera, ChevronLeft, ChevronRight, CalendarX, HelpCircle
+  Camera, ChevronLeft, ChevronRight, CalendarX, HelpCircle, Scale
 } from 'lucide-react-native';
 
 import { WellnessDiaryDashboard } from '@/components/ui/WellnessDiaryDashboard';
@@ -16,6 +16,7 @@ import { GDM_REQUIRED_FIELDS, gdmRiskService } from '@/services/gdmRiskService';
 import { gdmV4ResearchService } from '@/services/gdmV4ResearchService';
 import { gdmCacheService, GDMCacheEntry } from '@/services/gdmCacheService';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { GDMRiskResponse } from '@/types/gdm';
 import { GDMV4RiskResponse, GDMV4FormState, MedicalHistoryChoice } from '@/types/gdmV4';
 import { toGdmV4Binary } from '@/types/gdmV4';
@@ -25,6 +26,24 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 type Tab = 'daily' | 'weekly' | 'gdm';
+
+const FIELD_LABELS: Record<string, string> = {
+  bmi: 'Body Mass Index (BMI)',
+  age: 'Age',
+  no_of_pregnancy: 'Number of Pregnancies',
+  gestation_in_previous_pregnancy: 'Gestation in Previous Pregnancy',
+  hdl: 'HDL Cholesterol',
+  family_history: 'Family History of Diabetes',
+  unexplained_prenatal_loss: 'Unexplained Prenatal Loss',
+  large_child_or_birth_default: 'Large Child / Birth Defect History',
+  pcos: 'PCOS History',
+  sys_bp: 'Systolic Blood Pressure',
+  dia_bp: 'Diastolic Blood Pressure',
+  ogtt: 'OGTT Glucose Level',
+  hemoglobin: 'Hemoglobin',
+  sedentary_lifestyle: 'Sedentary Lifestyle',
+  prediabetes: 'Prediabetes History',
+};
 
 // ─── Constants & Colors ───────────────────────────────────────────────────────
 
@@ -114,6 +133,30 @@ export default function WellnessScreen() {
   const [isCheckingGdm, setIsCheckingGdm] = useState(false);
   const [assessmentStage, setAssessmentStage] = useState(0);
   const [gdmError, setGdmError] = useState<string | null>(null);
+  const [quickBmi, setQuickBmi] = useState('');
+  const [isSavingBmi, setIsSavingBmi] = useState(false);
+
+  const handleSaveQuickBmi = async () => {
+    const parsed = parseFloat(quickBmi.trim());
+    if (isNaN(parsed) || parsed < 10 || parsed > 60) {
+      Alert.alert('Invalid BMI', 'Please enter a valid BMI between 10 and 60 (e.g. 22.5).');
+      return;
+    }
+    if (!userId) return;
+    setIsSavingBmi(true);
+    try {
+      const { error } = await supabase.from('users').update({ bmi: parsed }).eq('id', userId);
+      if (error) throw error;
+      const profile = await gdmRiskService.getMaternalProfile(userId);
+      setMaternalProfile(profile);
+      setQuickBmi('');
+      Alert.alert('BMI Saved', 'Your BMI has been updated and your health profile is now complete!');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update BMI.');
+    } finally {
+      setIsSavingBmi(false);
+    }
+  };
 
   // ─── GDM V4 Research State ────────────────────────────────────────────────
   const [showV4Research, setShowV4Research] = useState(false);
@@ -209,7 +252,12 @@ export default function WellnessScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'gdm') void loadGdmCache();
+      if (activeTab === 'gdm') {
+        void loadGdmCache();
+        if (userId) {
+          void gdmRiskService.getMaternalProfile(userId).then(setMaternalProfile);
+        }
+      }
     }, [activeTab, userId])
   );
 
@@ -278,6 +326,9 @@ export default function WellnessScreen() {
     if (maternalProfile) {
       filled = fields.filter(f => maternalProfile[f] !== undefined && maternalProfile[f] !== null).length;
     }
+    const missingFields = fields.filter(
+      f => !maternalProfile || maternalProfile[f] === undefined || maternalProfile[f] === null
+    );
 
     if (isCheckingGdm) {
       const isStage1 = assessmentStage >= 1;
@@ -638,6 +689,74 @@ export default function WellnessScreen() {
             A risk estimate based on the health information in your maternal profile.
           </Text>
 
+          {missingFields.length > 0 && (
+            <View style={{ backgroundColor: '#FFFBEB', padding: 14, borderRadius: 12, marginVertical: 12, borderWidth: 1, borderColor: '#FDE68A' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <AlertCircle size={16} color="#D97706" style={{ marginRight: 6 }} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#92400E' }}>
+                  Missing Required Information ({missingFields.length})
+                </Text>
+              </View>
+              {missingFields.map(f => (
+                <Text key={f} style={{ fontSize: 12, color: '#B45309', marginLeft: 6, marginBottom: 2 }}>
+                  • {FIELD_LABELS[f] || f}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          {missingFields.includes('bmi') && (
+            <View style={{ marginBottom: 14, backgroundColor: '#F0FDF4', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#BBF7D0' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Scale size={16} color="#15803D" style={{ marginRight: 6 }} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#166534' }}>
+                  Enter Body Mass Index (BMI) to Unlock
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#15803D', marginBottom: 10 }}>
+                Normal healthy range is 18.5 – 24.9 (e.g. 22.5)
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#FFF',
+                    borderWidth: 1,
+                    borderColor: '#86EFAC',
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 9,
+                    fontSize: 14,
+                    color: '#1E293B',
+                  }}
+                  placeholder="e.g. 22.5"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="decimal-pad"
+                  value={quickBmi}
+                  onChangeText={setQuickBmi}
+                />
+                <TouchableOpacity
+                  onPress={handleSaveQuickBmi}
+                  disabled={isSavingBmi || !quickBmi.trim()}
+                  style={{
+                    backgroundColor: '#15803D',
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                    justifyContent: 'center',
+                    opacity: isSavingBmi || !quickBmi.trim() ? 0.6 : 1,
+                  }}
+                >
+                  {isSavingBmi ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Save & Unlock</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {gdmError && (
             <View style={[s.alertBox, { backgroundColor: COLORS.accentBg }]}>
               <AlertCircle size={16} color={COLORS.accent} style={{ marginRight: 8 }} />
@@ -653,7 +772,7 @@ export default function WellnessScreen() {
             <Text style={s.btnPrimaryText}>Calculate Risk</Text>
           </TouchableOpacity>
           {filled < fields.length && (
-            <Text style={s.disclaimerText}>Complete your health profile in settings to calculate your risk estimate.</Text>
+            <Text style={s.disclaimerText}>Complete your health profile to calculate your risk estimate.</Text>
           )}
         </View>
         <Text style={s.disclaimerText}>
