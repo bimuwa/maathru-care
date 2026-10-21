@@ -341,19 +341,21 @@ export default function MotherHomeScreen() {
         <Text className="text-slate-800 font-bold text-base mb-3">Quick Actions</Text>
         <View className="flex-row flex-wrap gap-3 mb-4">
           {[
-            { label: 'AI Risk Assessment', sub: '13-vital analysis', icon: <Brain color="#fff" size={22} />, bg: '#15803D', onPress: () => router.push('/(mother)/detect'), dark: true },
-            { label: 'Daily Symptoms', sub: 'Log today', icon: <Activity color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/wellness'), dark: false },
-            { label: 'BP & Weight', sub: 'Track vitals', icon: <HeartPulse color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/vitals'), dark: false },
-            { label: 'Medications', sub: 'My prescriptions', icon: <Pill color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/medications'), dark: false },
-            { label: 'Risk Trends', sub: 'History & analysis', icon: <TrendingUp color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/trends'), dark: false },
-            { label: 'Chat Doctor', sub: 'Message now', icon: <Bell color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push({ pathname: '/mother-chat', params: { doctorId: user?.assignedDoctorId ?? '', doctorName: user?.assignedDoctorName ?? 'Doctor' } }), dark: false },
+            { label: 'AI Risk Assessment', sub: '13-vital analysis', icon: <Brain color="#fff" size={22} />, bg: '#15803D', onPress: () => router.push('/(mother)/detect'), dark: true, fullWidth: false },
+            { label: 'Daily Symptoms', sub: 'Log today', icon: <Activity color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/wellness'), dark: false, fullWidth: false },
+            { label: 'Medications', sub: 'My prescriptions', icon: <Pill color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/medications'), dark: false, fullWidth: false },
+            { label: 'Risk Trends', sub: 'History & analysis', icon: <TrendingUp color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push('/(mother)/trends'), dark: false, fullWidth: false },
+            { label: 'Chat Doctor', sub: 'Message your doctor now', icon: <Bell color="#15803D" size={22} />, bg: '#fff', onPress: () => router.push({ pathname: '/mother-chat', params: { doctorId: user?.assignedDoctorId ?? '', doctorName: user?.assignedDoctorName ?? 'Doctor' } }), dark: false, fullWidth: true },
           ].map((action, i) => (
             <TouchableOpacity key={i} onPress={action.onPress} activeOpacity={0.8}
-              className="rounded-[18px] p-4 flex-1 border"
-              style={{ minWidth: '45%', backgroundColor: action.bg, borderColor: action.dark ? '#15803D' : '#F1F5F9' }}>
+              className={`rounded-[18px] p-4 border ${action.fullWidth ? 'w-full flex-row items-center' : 'flex-1'}`}
+              style={{ minWidth: action.fullWidth ? '100%' : '45%', backgroundColor: action.bg, borderColor: action.dark ? '#15803D' : '#F1F5F9' }}>
               {action.icon}
-              <Text className="font-bold text-sm mt-2" style={{ color: action.dark ? '#fff' : '#1E293B' }}>{action.label}</Text>
-              <Text className="text-xs mt-0.5" style={{ color: action.dark ? '#86EFAC' : '#94A3B8' }}>{action.sub}</Text>
+              <View className={action.fullWidth ? 'ml-3 flex-1' : ''}>
+                <Text className={`font-bold text-sm ${action.fullWidth ? '' : 'mt-2'}`} style={{ color: action.dark ? '#fff' : '#1E293B' }}>{action.label}</Text>
+                <Text className="text-xs mt-0.5" style={{ color: action.dark ? '#86EFAC' : '#94A3B8' }}>{action.sub}</Text>
+              </View>
+              {action.fullWidth && <ChevronRight color="#94A3B8" size={18} />}
             </TouchableOpacity>
           ))}
         </View>

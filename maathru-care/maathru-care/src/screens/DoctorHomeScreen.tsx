@@ -57,6 +57,15 @@ function StatCard({ title, value, icon, accent }: { title: string; value: number
   );
 }
 
+function formatProbability(p: number | undefined | null): string {
+  if (p == null || isNaN(p)) return '0%';
+  const raw = Number(p);
+  let pct = raw > 1 ? raw : raw * 100;
+  if (pct > 100) pct = 100;
+  if (pct < 0) pct = 0;
+  return pct % 1 === 0 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
+}
+
 function AlertCard({ alert, onPress }: { alert: DoctorAlert; onPress: () => void }) {
   const isSOS = (alert as any).isSOS;
   return (
@@ -78,7 +87,7 @@ function AlertCard({ alert, onPress }: { alert: DoctorAlert; onPress: () => void
             {isSOS && <Text className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">🆘 SOS</Text>}
           </View>
           <Text className="text-slate-500 text-xs">
-            Probability: <Text className="font-semibold text-slate-700">{(alert.probability * 100).toFixed(1)}%</Text>
+            Probability: <Text className="font-semibold text-slate-700">{formatProbability(alert.probability)}</Text>
           </Text>
         </View>
         <View className="items-end gap-2">

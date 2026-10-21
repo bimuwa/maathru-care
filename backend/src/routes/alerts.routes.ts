@@ -18,22 +18,26 @@ router.get('/doctor/:doctorId', async (req: Request, res: Response): Promise<voi
     if (error) throw error;
 
     // Map to frontend expectations
-    const alerts = data.map((a: any) => ({
-      id: a.id,
-      patientId: a.patient_id,
-      patientName: a.patient_name || a.alert_title?.replace('🆘 EMERGENCY SOS — ', '') || 'Unknown Patient',
-      doctorId: a.doctor_id,
-      alertTitle: a.alert_title,
-      alertMessage: a.alert_message,
-      riskLevel: a.risk_level,
-      probability: a.probability,
-      isSOS: a.is_sos,
-      status: a.status,
-      createdAt: a.created_at,
-      alertType: a.alert_type,
-      scheduledAt: a.scheduled_at,
-      appointmentReason: a.appointment_reason,
-    }));
+    const alerts = data.map((a: any) => {
+      const rawP = Number(a.probability) || 0;
+      const prob = rawP > 1 ? rawP / 100 : rawP;
+      return {
+        id: a.id,
+        patientId: a.patient_id,
+        patientName: a.patient_name || a.alert_title?.replace('🆘 EMERGENCY SOS — ', '') || 'Unknown Patient',
+        doctorId: a.doctor_id,
+        alertTitle: a.alert_title,
+        alertMessage: a.alert_message,
+        riskLevel: a.risk_level,
+        probability: Math.min(1.0, prob),
+        isSOS: a.is_sos,
+        status: a.status,
+        createdAt: a.created_at,
+        alertType: a.alert_type,
+        scheduledAt: a.scheduled_at,
+        appointmentReason: a.appointment_reason,
+      };
+    });
 
     res.status(200).json({ success: true, alerts });
   } catch (err: any) {
@@ -55,21 +59,25 @@ router.get('/patient/:patientId', async (req: Request, res: Response): Promise<v
 
     if (error) throw error;
 
-    const alerts = data.map((a: any) => ({
-      id: a.id,
-      patientId: a.patient_id,
-      doctorId: a.doctor_id,
-      alertTitle: a.alert_title,
-      alertMessage: a.alert_message,
-      riskLevel: a.risk_level,
-      probability: a.probability,
-      isSOS: a.is_sos,
-      status: a.status,
-      createdAt: a.created_at,
-      alertType: a.alert_type,
-      scheduledAt: a.scheduled_at,
-      appointmentReason: a.appointment_reason,
-    }));
+    const alerts = data.map((a: any) => {
+      const rawP = Number(a.probability) || 0;
+      const prob = rawP > 1 ? rawP / 100 : rawP;
+      return {
+        id: a.id,
+        patientId: a.patient_id,
+        doctorId: a.doctor_id,
+        alertTitle: a.alert_title,
+        alertMessage: a.alert_message,
+        riskLevel: a.risk_level,
+        probability: Math.min(1.0, prob),
+        isSOS: a.is_sos,
+        status: a.status,
+        createdAt: a.created_at,
+        alertType: a.alert_type,
+        scheduledAt: a.scheduled_at,
+        appointmentReason: a.appointment_reason,
+      };
+    });
 
     res.status(200).json({ success: true, alerts });
   } catch (err: any) {
@@ -140,7 +148,7 @@ router.post('/sos', async (req: Request, res: Response): Promise<void> => {
       alert_title: `🆘 EMERGENCY SOS — ${patientName}`,
       alert_message: `Patient ${patientName} has triggered an emergency SOS. Last BP: ${lastBP ?? 'N/A'}, Last Risk Level: ${lastRiskLevel ?? 'N/A'}.`,
       risk_level: 'Very High',
-      probability: 100,
+      probability: 1.0,
       is_sos: true,
       status: 'Pending',
     };

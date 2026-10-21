@@ -53,6 +53,15 @@ const WORKFLOW_STEPS: { label: string; targetStatus: DoctorAlert['status']; icon
   { label: 'Close Alert', targetStatus: 'Closed', icon: <CheckCircle size={14} color="#10B981" />, color: '#10B981' },
 ];
 
+function formatProbability(p: number | undefined | null): string {
+  if (p == null || isNaN(p)) return '0%';
+  const raw = Number(p);
+  let pct = raw > 1 ? raw : raw * 100;
+  if (pct > 100) pct = 100;
+  if (pct < 0) pct = 0;
+  return pct % 1 === 0 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
+}
+
 function AlertCard({
   alert,
   expanded,
@@ -73,6 +82,12 @@ function AlertCard({
     setSaving(false);
   };
 
+  const pctNumber = (() => {
+    const raw = Number(alert.probability) || 0;
+    let pct = raw > 1 ? raw : raw * 100;
+    return Math.min(100, Math.max(0, pct));
+  })();
+
   return (
     <View className="bg-white rounded-[20px] mb-3 overflow-hidden border border-slate-100"
       style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
@@ -90,14 +105,14 @@ function AlertCard({
           </View>
           <View className="items-end gap-2 ml-2">
             <Text className="text-lg font-bold" style={{ color: RISK_COLORS[alert.riskLevel] || '#10B981' }}>
-              {(alert.probability * 100).toFixed(1)}%
+              {formatProbability(alert.probability)}
             </Text>
             {expanded ? <ChevronUp size={18} color="#94A3B8" /> : <ChevronDown size={18} color="#94A3B8" />}
           </View>
         </View>
         <View className="h-1.5 bg-slate-100 rounded-full overflow-hidden mt-3">
           <View className="h-full rounded-full"
-            style={{ width: `${alert.probability * 100}%`, backgroundColor: RISK_COLORS[alert.riskLevel] || '#10B981' }} />
+            style={{ width: `${pctNumber}%`, backgroundColor: RISK_COLORS[alert.riskLevel] || '#10B981' }} />
         </View>
         <Text className="text-slate-400 text-xs mt-2">
           {new Date(alert.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
