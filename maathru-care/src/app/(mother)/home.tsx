@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import {
   Brain, Activity, Bell, ChevronRight, Heart, AlertTriangle,
   TrendingUp, HeartPulse, Pill, ShieldAlert, Calendar, Clock,
-  CheckCircle, Stethoscope, ScanLine, User
+  CheckCircle, Stethoscope, ScanLine, User, Baby, Scale, FileText
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { api, RiskPredictionResult } from '../../services/api';
@@ -390,6 +390,68 @@ export default function MotherHomeScreen() {
             </View>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* ── More Tools ──────────────────────────────────────────────────── */}
+      <View className="px-5 mt-6 mb-4">
+        <Text className="text-slate-800 font-bold text-base mb-3">More Tools</Text>
+        <View className="flex-row flex-wrap gap-3">
+          {/* Kick Counter */}
+          <TouchableOpacity
+            onPress={() => router.push('/kick-counter' as any)}
+            activeOpacity={0.8}
+            className="bg-white rounded-[20px] p-4 items-center justify-center"
+            style={{ width: '47%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}
+          >
+            <View className="w-12 h-12 bg-pink-50 rounded-full items-center justify-center mb-2">
+              <Baby color="#EC4899" size={22} />
+            </View>
+            <Text className="text-slate-700 font-semibold text-sm">Kick Counter</Text>
+            <Text className="text-slate-400 text-xs text-center mt-0.5">Track baby movements</Text>
+          </TouchableOpacity>
+
+          {/* Weight Tracker */}
+          <TouchableOpacity
+            onPress={() => router.push('/weight-tracker' as any)}
+            activeOpacity={0.8}
+            className="bg-white rounded-[20px] p-4 items-center justify-center"
+            style={{ width: '47%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}
+          >
+            <View className="w-12 h-12 bg-blue-50 rounded-full items-center justify-center mb-2">
+              <Scale color="#3B82F6" size={22} />
+            </View>
+            <Text className="text-slate-700 font-semibold text-sm">Weight Tracker</Text>
+            <Text className="text-slate-400 text-xs text-center mt-0.5">IOM guidelines chart</Text>
+          </TouchableOpacity>
+
+          {/* Health Report */}
+          <TouchableOpacity
+            onPress={() => router.push('/health-report' as any)}
+            activeOpacity={0.8}
+            className="bg-white rounded-[20px] p-4 items-center justify-center"
+            style={{ width: '47%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}
+          >
+            <View className="w-12 h-12 bg-emerald-50 rounded-full items-center justify-center mb-2">
+              <FileText color="#15803D" size={22} />
+            </View>
+            <Text className="text-slate-700 font-semibold text-sm">Health Report</Text>
+            <Text className="text-slate-400 text-xs text-center mt-0.5">Generate PDF report</Text>
+          </TouchableOpacity>
+
+          {/* Appointments */}
+          <TouchableOpacity
+            onPress={() => router.push('/appointments' as any)}
+            activeOpacity={0.8}
+            className="bg-white rounded-[20px] p-4 items-center justify-center"
+            style={{ width: '47%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}
+          >
+            <View className="w-12 h-12 bg-purple-50 rounded-full items-center justify-center mb-2">
+              <Calendar color="#7C3AED" size={22} />
+            </View>
+            <Text className="text-slate-700 font-semibold text-sm">Appointments</Text>
+            <Text className="text-slate-400 text-xs text-center mt-0.5">View schedule</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── SOS Confirmation Modal ─────────────────────────────────────────── */}

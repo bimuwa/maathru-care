@@ -31,7 +31,8 @@
           "image": "./assets/images/maathru-care-logo.jpg",
           "imageWidth": 200
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
